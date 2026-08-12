@@ -7,6 +7,9 @@ Files in this folder:
 | `manifest.json` | The file you register in Trimble Connect. Points at `index.html`. |
 | `index.html` | The extension app: Point Extractor (saved Views → PNEZD CSV) + About. |
 | `trimbleconnect.workspace.api.js` | Trimble's Workspace API library (v0.3.34, downloaded from npm) — served locally so there is no CDN dependency. |
+| `icon.png` | PEI black/gold menu icon (required — Connect won't render menu items without an icon). |
+| `pristine.tflx` | Empty FieldLink job template (SQLite) cloned for TFLX export — same template as the desktop CsvToTflx tool. |
+| `sql-wasm.js` / `sql-wasm.wasm` | sql.js (SQLite compiled to WebAssembly), loaded on demand for TFLX export. |
 
 ## Important: these files must be reachable by HTTPS
 
