@@ -98,6 +98,9 @@
         <span><label for="fname">File name</label>
           <input type="text" id="fname" value="Connect_Points_PNEZD"></span>
         <button id="btn-download" class="secondary">Download CSV</button>
+        <button id="btn-tflx" class="secondary">Download TFLX</button>
+        <span><label for="ctrlpts" style="margin-bottom:0">&nbsp;</label>
+          <label style="font-size:13px;color:var(--ink)"><input type="checkbox" id="ctrlpts"> Control points (TFLX type 2)</label></span>
         <span class="muted" id="sel-count"></span>
       </div>
     </div>
@@ -252,6 +255,7 @@ function updateCount() {
   const v = $("viewsel").value;
   $("sel-count").textContent = n + " of " + vis.length + " shown point(s) will export" + (v ? " (view: " + v + ")" : "");
   $("btn-download").disabled = n === 0;
+  $("btn-tflx").disabled = n === 0;
 }
 
 async function extract() {
@@ -290,6 +294,7 @@ async function extract() {
           n: (m.positionY / perMm).toFixed(dec),
           e: (m.positionX / perMm).toFixed(dec),
           z: (m.positionZ / perMm).toFixed(dec),
+          mmx: m.positionX, mmy: m.positionY, mmz: m.positionZ,
           d: vname,
           view: vname,
           sel: true
@@ -324,23 +329,133 @@ async function extract() {
   }
 }
 
+function exportSelection() {
+  return visibleRows().map(x => x.r).filter(r => r.sel);
+}
+
+function exportName(ext) {
+  let name = ($("fname").value || "Connect_Points_PNEZD").trim().replace(/[\\/:*?"<>|]/g, "_");
+  name = name.replace(/\.(csv|tflx)$/i, "");
+  return { base: name, full: name + ext };
+}
+
+function saveBlob(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function download() {
-  const selected = visibleRows().map(x => x.r).filter(r => r.sel);
+  const selected = exportSelection();
   if (!selected.length) return;
   let pnum = parseInt($("startnum").value, 10) || 1000;
   const csv = selected.map(r => [pnum++, r.n, r.e, r.z, r.d].join(",")).join("\r\n") + "\r\n";
-  let name = ($("fname").value || "Connect_Points_PNEZD").trim().replace(/[\\/:*?"<>|]/g, "_");
-  if (!/\.csv$/i.test(name)) name += ".csv";
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const name = exportName(".csv").full;
+  saveBlob(new Blob([csv], { type: "text/csv" }), name);
   setStatus("Downloaded " + name + " with " + selected.length + " point(s), numbered from " + (parseInt($("startnum").value, 10) || 1000) + ".", "ok");
+}
+
+// ---- TFLX export (FieldLink job = SQLite db cloned from a pristine template) ----
+
+let sqlJsPromise = null;
+function ensureSqlJs() {
+  if (!sqlJsPromise) {
+    sqlJsPromise = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "./sql-wasm.js";
+      s.onload = () => resolve();
+      s.onerror = () => { sqlJsPromise = null; reject(new Error("Could not load SQLite engine")); };
+      document.head.appendChild(s);
+    }).then(() => window.initSqlJs({ locateFile: f => "./" + f }));
+  }
+  return sqlJsPromise;
+}
+
+const pad = (v, len) => String(v).padStart(len, "0");
+function tsPoint(d) {  // yyyy-MM-dd HH:mm:ss.ffffff
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1, 2) + "-" + pad(d.getDate(), 2) + " " +
+    pad(d.getHours(), 2) + ":" + pad(d.getMinutes(), 2) + ":" + pad(d.getSeconds(), 2) + "." +
+    pad(d.getMilliseconds(), 3) + "000";
+}
+function tsMeta(d) {   // yyyy-MM-ddTHH:mm:ss
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1, 2) + "-" + pad(d.getDate(), 2) + "T" +
+    pad(d.getHours(), 2) + ":" + pad(d.getMinutes(), 2) + ":" + pad(d.getSeconds(), 2);
+}
+
+async function downloadTflx() {
+  const selected = exportSelection();
+  if (!selected.length) return;
+  $("btn-tflx").disabled = true;
+  try {
+    setStatus("Loading SQLite engine…");
+    const SQL = await ensureSqlJs();
+    setStatus("Building TFLX…");
+    const buf = await fetch("./pristine.tflx").then(r => {
+      if (!r.ok) throw new Error("Could not load TFLX template");
+      return r.arrayBuffer();
+    });
+    const db = new SQL.Database(new Uint8Array(buf));
+
+    const now = new Date();
+    const name = exportName(".tflx");
+    const pointType = $("ctrlpts").checked ? 2 : 1;   // 1 = design, 2 = control
+    // FieldLink's default layer "0" keeps this well-known GUID in every job;
+    // FieldLink and the Connect TrimBIM converter look it up by ID.
+    const layer0Id = "8715bb57-27ed-4cd9-85df-c45d86004f5a";
+    const layerId = crypto.randomUUID();
+
+    db.run("BEGIN;");
+    db.run("INSERT INTO Layer VALUES (?,1,'0')", [layer0Id]);
+    db.run("INSERT INTO Layer VALUES (?,1,?)", [layerId, name.base]);
+
+    let pnum = parseInt($("startnum").value, 10) || 1000;
+    const t = tsPoint(now);
+    for (const r of selected) {
+      // TFLX stores meters: X = Easting, Y = Northing, Z = Elevation
+      db.run("INSERT INTO DesignPoint VALUES (?,?,?,?,?,?,?,?,?,0)",
+        [crypto.randomUUID(), r.d, layerId, String(pnum++), pointType,
+         r.mmx / 1000, r.mmy / 1000, r.mmz / 1000, t]);
+    }
+
+    // Metadata/Setting rows use fixed well-known GUIDs in every FieldLink job.
+    const tm = tsMeta(now);
+    const who = "Plateau Tools (Trimble Connect)";
+    const meta = [
+      ["130f4889-ffd5-4fba-8929-101859e34575", "Version", "1.0"],
+      ["68c9ce46-b1ba-45f7-966f-9678586d2ef0", "SupportIndex", "1"],
+      ["5b452f07-5538-44d8-b5ef-6336f1bdab6a", "CreatedDate", tm],
+      ["c0e27d6c-68ab-4640-bbe0-dad01aa80715", "CreatedBy", who],
+      ["12799d3f-3ad3-48ff-bb0c-3762d01db3cd", "ModifiedDate", tm],
+      ["fe62eeb6-a434-402e-b07d-e8000eb26349", "ModifiedBy", who],
+      ["abe22a1d-a741-468e-bb44-90fbfc4dd7bf", "PointsCount", String(selected.length)],
+      ["23b70ddf-5134-466f-8415-c4c03f665591", "LinesCount", "0"],
+      ["52bd5127-92f7-4c81-a2d4-1809269074e1", "ArcsCount", "0"],
+      ["e793aecc-f433-42f3-8b56-6532ad3e8ab6", "StakedPointsCount", "0"]
+    ];
+    for (const m of meta) db.run("INSERT INTO Metadata VALUES (?,?,?)", m);
+    db.run("INSERT INTO Setting VALUES ('b18b9361-9a4d-421d-89ae-7e2c5ea6f3a6','HorizontalTolerance','0.0254')");
+    db.run("INSERT INTO Setting VALUES ('529e24e8-8f6b-4d61-be3b-6199f29125d0','VerticalTolerance','0.0254')");
+    db.run("COMMIT;");
+
+    const bytes = db.export();
+    db.close();
+    saveBlob(new Blob([bytes], { type: "application/octet-stream" }), name.full);
+    setStatus("Downloaded " + name.full + " with " + selected.length + " " +
+      (pointType === 2 ? "control" : "design") + " point(s), numbered from " +
+      (parseInt($("startnum").value, 10) || 1000) + ".", "ok");
+  } catch (err) {
+    log("tflx failed", err);
+    setStatus("TFLX export failed: " + err.message, "err");
+  } finally {
+    $("btn-tflx").disabled = false;
+  }
 }
 
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
+$("btn-tflx").addEventListener("click", downloadTflx);
 $("viewsel").addEventListener("change", () => { lastIdx = null; renderTable(); });
 $("sel-all").addEventListener("change", (e) => {
   visibleRows().forEach(x => x.r.sel = e.target.checked);
