@@ -26,15 +26,16 @@
   }
   header .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--orange); }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
-  main { max-width: 720px; margin: 0 auto; padding: 16px; }
+  main { max-width: 860px; margin: 0 auto; padding: 16px; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; }
   .card h2 { font-size: 14px; margin: 0 0 8px; }
   .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 10px 0; }
   label { display: block; font-size: 12px; color: var(--soft); margin-bottom: 3px; }
-  select, input {
+  select, input[type="number"], input[type="text"] {
     font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink);
   }
   input[type="number"] { width: 90px; }
+  input[type="text"] { width: 220px; }
   button {
     font: inherit; font-weight: 600; padding: 8px 16px; border: none; border-radius: 6px;
     background: var(--orange); color: #fff; cursor: pointer;
@@ -44,12 +45,14 @@
   #status { font-size: 13px; color: var(--soft); min-height: 1.2em; margin-top: 8px; }
   #status.ok { color: var(--ok); }
   #status.err { color: var(--err); }
-  .table-scroll { overflow-x: auto; margin-top: 10px; }
+  .table-scroll { overflow-x: auto; margin-top: 10px; max-height: 45vh; overflow-y: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
   th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--soft); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--soft); position: sticky; top: 0; background: #fff; }
+  tr.off td { color: var(--soft); }
   .muted { color: var(--soft); font-size: 13px; }
   #view-about, #view-extractor { display: none; }
+  #download-bar { display: none; align-items: end; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 </style>
 </head>
 <body>
@@ -63,7 +66,7 @@
   <div id="view-extractor">
     <div class="card">
       <h2>Point Extractor — saved Views &rarr; PNEZD CSV</h2>
-      <p class="muted">Walks every saved View in this project, pulls out single-point measurements, and builds a P,N,E,Z,Description CSV. Description comes from the View name.</p>
+      <p class="muted">Walks every saved View in this project and pulls out single-point measurements. Check the points you want, then download a P,N,E,Z,Description CSV. Description comes from the View name.</p>
       <div class="row">
         <span><label for="units">Output units</label>
           <select id="units">
@@ -76,13 +79,21 @@
         <span><label for="decimals">Decimals</label>
           <input type="number" id="decimals" value="3" min="0" max="6"></span>
         <button id="btn-extract">Extract points</button>
-        <button id="btn-download" class="secondary" disabled>Download CSV</button>
       </div>
       <div id="status"></div>
       <div class="table-scroll"><table id="preview" hidden>
-        <thead><tr><th>P</th><th>N (Northing)</th><th>E (Easting)</th><th>Z (Elev)</th><th>Description</th></tr></thead>
+        <thead><tr>
+          <th><input type="checkbox" id="sel-all" checked title="Select / clear all"></th>
+          <th>N (Northing)</th><th>E (Easting)</th><th>Z (Elev)</th><th>Description</th>
+        </tr></thead>
         <tbody></tbody>
       </table></div>
+      <div id="download-bar">
+        <span><label for="fname">File name</label>
+          <input type="text" id="fname" value="Connect_Points_PNEZD"></span>
+        <button id="btn-download" class="secondary">Download CSV</button>
+        <span class="muted" id="sel-count"></span>
+      </div>
     </div>
   </div>
 
@@ -98,10 +109,11 @@ import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
 const USFT_MM = 304.800609601;   // 1 US survey foot in mm
 const IFT_MM  = 304.8;
+const log = (...a) => console.log("[PlateauTools]", ...a);
 
 let API = null;
 let accessToken = null;
-let rows = [];                    // extracted points
+let rows = [];                    // { n, e, z, d, sel }
 
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -112,14 +124,24 @@ function show(view) {
   }
 }
 
+function tokenFrom(value) {
+  if (typeof value === "string" && value.length > 20 && value !== "pending") return value;
+  if (value && typeof value === "object") {
+    return value.accessToken || value.token || value.data || null;
+  }
+  return null;
+}
+
 async function init() {
   API = await WorkspaceAPI.connect(window.parent, (event, args) => {
+    log("event:", event, args);
     if (event === "extension.command") {
       const cmd = args && args.data;
       if (cmd === "about") show("about");
       else show("extractor");
     } else if (event === "extension.accessToken") {
-      if (args && args.data && args.data !== "pending") accessToken = args.data;
+      const t = tokenFrom(args && args.data !== undefined ? args.data : args);
+      if (t) { accessToken = t; log("token via event, len", t.length); }
     }
   });
 
@@ -137,11 +159,13 @@ async function init() {
   show("extractor");
 }
 
-async function getToken() {
-  if (accessToken) return accessToken;
+async function getToken(force) {
+  if (accessToken && !force) return accessToken;
+  if (force) accessToken = null;
   const result = await API.extension.requestPermission("accesstoken");
-  if (result && result !== "pending") { accessToken = result; return accessToken; }
-  // consent prompt is showing — wait for the extension.accessToken event
+  log("requestPermission returned:", typeof result, result === "pending" ? "pending" : "");
+  const direct = tokenFrom(result);
+  if (direct) { accessToken = direct; return accessToken; }
   setStatus("Waiting for you to approve access in Trimble Connect…");
   await new Promise((resolve, reject) => {
     const t0 = Date.now();
@@ -153,19 +177,54 @@ async function getToken() {
   return accessToken;
 }
 
-async function tcGet(path) {
+async function tcGet(path, retried) {
   const res = await fetch("https://app.connect.trimble.com/tc/api/2.0" + path, {
     headers: { Authorization: "Bearer " + accessToken }
   });
+  if (res.status === 401 && !retried) {
+    log("401 — refreshing token and retrying once");
+    await getToken(true);
+    return tcGet(path, true);
+  }
   if (!res.ok) throw new Error("API " + res.status + " on " + path);
   return res.json();
+}
+
+function renderTable() {
+  const tbody = $("preview").querySelector("tbody");
+  tbody.innerHTML = "";
+  rows.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    const tdCb = document.createElement("td");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = r.sel;
+    cb.addEventListener("change", () => { r.sel = cb.checked; tr.className = r.sel ? "" : "off"; updateCount(); });
+    tdCb.appendChild(cb);
+    tr.appendChild(tdCb);
+    for (const v of [r.n, r.e, r.z, r.d]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  });
+  $("preview").hidden = false;
+  $("download-bar").style.display = "flex";
+  updateCount();
+}
+
+function updateCount() {
+  const n = rows.filter(r => r.sel).length;
+  $("sel-count").textContent = n + " of " + rows.length + " point(s) selected";
+  $("btn-download").disabled = n === 0;
 }
 
 async function extract() {
   rows = [];
   $("btn-extract").disabled = true;
-  $("btn-download").disabled = true;
   $("preview").hidden = true;
+  $("download-bar").style.display = "none";
   try {
     await getToken();
     setStatus("Reading project…");
@@ -178,7 +237,6 @@ async function extract() {
 
     const perMm = { usft: USFT_MM, ift: IFT_MM, m: 1000 }[$("units").value];
     const dec = Math.max(0, Math.min(6, parseInt($("decimals").value, 10) || 3));
-    let pnum = parseInt($("startnum").value, 10) || 1000;
     const seen = new Set();
 
     for (let i = 0; i < list.length; i++) {
@@ -192,32 +250,22 @@ async function extract() {
         seen.add(key);
         if (typeof m.positionX !== "number") continue;
         rows.push({
-          p: pnum++,
           n: (m.positionY / perMm).toFixed(dec),
           e: (m.positionX / perMm).toFixed(dec),
           z: (m.positionZ / perMm).toFixed(dec),
-          d: (view.name || list[i].name || "View").replace(/,/g, " ")
+          d: (view.name || list[i].name || "View").replace(/,/g, " "),
+          sel: true
         });
       }
     }
 
     if (!rows.length) { setStatus("Views found, but no single-point measurements in them.", "err"); return; }
 
-    const tbody = $("preview").querySelector("tbody");
-    tbody.innerHTML = "";
-    for (const r of rows) {
-      const tr = document.createElement("tr");
-      for (const v of [r.p, r.n, r.e, r.z, r.d]) {
-        const td = document.createElement("td");
-        td.textContent = v;
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
-    }
-    $("preview").hidden = false;
-    $("btn-download").disabled = false;
-    setStatus(rows.length + " point(s) extracted from " + list.length + " View(s). Ready to download.", "ok");
+    $("sel-all").checked = true;
+    renderTable();
+    setStatus(rows.length + " point(s) extracted from " + list.length + " View(s). Check the ones you need, set a file name, then download.", "ok");
   } catch (err) {
+    log("extract failed", err);
     setStatus("Failed: " + err.message, "err");
   } finally {
     $("btn-extract").disabled = false;
@@ -225,16 +273,26 @@ async function extract() {
 }
 
 function download() {
-  const csv = rows.map(r => [r.p, r.n, r.e, r.z, r.d].join(",")).join("\r\n") + "\r\n";
+  const selected = rows.filter(r => r.sel);
+  if (!selected.length) return;
+  let pnum = parseInt($("startnum").value, 10) || 1000;
+  const csv = selected.map(r => [pnum++, r.n, r.e, r.z, r.d].join(",")).join("\r\n") + "\r\n";
+  let name = ($("fname").value || "Connect_Points_PNEZD").trim().replace(/[\\/:*?"<>|]/g, "_");
+  if (!/\.csv$/i.test(name)) name += ".csv";
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  a.download = "Connect_Points_PNEZD.csv";
+  a.download = name;
   a.click();
   URL.revokeObjectURL(a.href);
+  setStatus("Downloaded " + name + " with " + selected.length + " point(s), numbered from " + (parseInt($("startnum").value, 10) || 1000) + ".", "ok");
 }
 
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
+$("sel-all").addEventListener("change", (e) => {
+  rows.forEach(r => r.sel = e.target.checked);
+  renderTable();
+});
 init().catch(err => setStatus("Could not connect to Trimble Connect: " + err.message, "err"));
 </script>
 </body>
