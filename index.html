@@ -36,6 +36,7 @@
   }
   input[type="number"] { width: 90px; }
   input[type="text"] { width: 220px; }
+  select { max-width: 260px; }
   button {
     font: inherit; font-weight: 600; padding: 8px 16px; border: none; border-radius: 6px;
     background: var(--orange); color: #fff; cursor: pointer;
@@ -45,6 +46,7 @@
   #status { font-size: 13px; color: var(--soft); min-height: 1.2em; margin-top: 8px; }
   #status.ok { color: var(--ok); }
   #status.err { color: var(--err); }
+  #filter-bar { display: none; }
   .table-scroll { overflow-x: auto; margin-top: 10px; max-height: 45vh; overflow-y: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
   th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -66,7 +68,7 @@
   <div id="view-extractor">
     <div class="card">
       <h2>Point Extractor — saved Views &rarr; PNEZD CSV</h2>
-      <p class="muted">Walks every saved View in this project and pulls out single-point measurements. Check the points you want, then download a P,N,E,Z,Description CSV. Description comes from the View name.</p>
+      <p class="muted">Walks every saved View in this project and pulls out single-point measurements. Check the points you want (Shift-click checks a range), then download a P,N,E,Z,Description CSV. Description comes from the View name.</p>
       <div class="row">
         <span><label for="units">Output units</label>
           <select id="units">
@@ -80,10 +82,14 @@
           <input type="number" id="decimals" value="3" min="0" max="6"></span>
         <button id="btn-extract">Extract points</button>
       </div>
-      <div id="status"></div>
+      <div id="status">Ready — click Extract points.</div>
+      <div class="row" id="filter-bar">
+        <span><label for="viewsel">Show points from</label>
+          <select id="viewsel"><option value="">All views</option></select></span>
+      </div>
       <div class="table-scroll"><table id="preview" hidden>
         <thead><tr>
-          <th><input type="checkbox" id="sel-all" checked title="Select / clear all"></th>
+          <th><input type="checkbox" id="sel-all" checked title="Select / clear all shown"></th>
           <th>N (Northing)</th><th>E (Easting)</th><th>Z (Elev)</th><th>Description</th>
         </tr></thead>
         <tbody></tbody>
@@ -113,7 +119,8 @@ const log = (...a) => console.log("[PlateauTools]", ...a);
 
 let API = null;
 let accessToken = null;
-let rows = [];                    // { n, e, z, d, sel }
+let rows = [];                    // { n, e, z, d, view, sel }
+let lastIdx = null;               // last toggled row index, for shift-select
 
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -190,16 +197,40 @@ async function tcGet(path, retried) {
   return res.json();
 }
 
+function visibleRows() {
+  const v = $("viewsel").value;
+  return rows.map((r, i) => ({ r, i })).filter(x => !v || x.r.view === v);
+}
+
 function renderTable() {
   const tbody = $("preview").querySelector("tbody");
   tbody.innerHTML = "";
-  rows.forEach((r, i) => {
+  const vis = visibleRows();
+  vis.forEach(({ r, i }, pos) => {
     const tr = document.createElement("tr");
+    tr.className = r.sel ? "" : "off";
     const tdCb = document.createElement("td");
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = r.sel;
-    cb.addEventListener("change", () => { r.sel = cb.checked; tr.className = r.sel ? "" : "off"; updateCount(); });
+    cb.addEventListener("click", (e) => {
+      const state = cb.checked;
+      if (e.shiftKey && lastIdx !== null) {
+        // apply to the visible range between last click and this one
+        const posLast = vis.findIndex(x => x.i === lastIdx);
+        if (posLast !== -1) {
+          const [a, b] = [Math.min(posLast, pos), Math.max(posLast, pos)];
+          for (let k = a; k <= b; k++) vis[k].r.sel = state;
+          lastIdx = i;
+          renderTable();
+          return;
+        }
+      }
+      r.sel = state;
+      tr.className = state ? "" : "off";
+      lastIdx = i;
+      updateCount();
+    });
     tdCb.appendChild(cb);
     tr.appendChild(tdCb);
     for (const v of [r.n, r.e, r.z, r.d]) {
@@ -211,20 +242,25 @@ function renderTable() {
   });
   $("preview").hidden = false;
   $("download-bar").style.display = "flex";
+  $("sel-all").checked = vis.length > 0 && vis.every(x => x.r.sel);
   updateCount();
 }
 
 function updateCount() {
   const n = rows.filter(r => r.sel).length;
-  $("sel-count").textContent = n + " of " + rows.length + " point(s) selected";
+  const vis = visibleRows().length;
+  const v = $("viewsel").value;
+  $("sel-count").textContent = n + " of " + rows.length + " point(s) selected" + (v ? " (" + vis + " shown from this view)" : "");
   $("btn-download").disabled = n === 0;
 }
 
 async function extract() {
   rows = [];
+  lastIdx = null;
   $("btn-extract").disabled = true;
   $("preview").hidden = true;
   $("download-bar").style.display = "none";
+  $("filter-bar").style.display = "none";
   try {
     await getToken();
     setStatus("Reading project…");
@@ -243,6 +279,7 @@ async function extract() {
       setStatus("Reading View " + (i + 1) + " of " + list.length + "…");
       const view = await tcGet("/views/" + list[i].id);
       const markups = view.markups || [];
+      const vname = (view.name || list[i].name || "View").replace(/,/g, " ");
       for (const m of markups) {
         if (m.type !== "measure") continue;
         const key = m.markupId != null ? m.markupId : (m.id != null ? m.id : JSON.stringify([m.positionX, m.positionY, m.positionZ]));
@@ -253,7 +290,8 @@ async function extract() {
           n: (m.positionY / perMm).toFixed(dec),
           e: (m.positionX / perMm).toFixed(dec),
           z: (m.positionZ / perMm).toFixed(dec),
-          d: (view.name || list[i].name || "View").replace(/,/g, " "),
+          d: vname,
+          view: vname,
           sel: true
         });
       }
@@ -261,9 +299,23 @@ async function extract() {
 
     if (!rows.length) { setStatus("Views found, but no single-point measurements in them.", "err"); return; }
 
-    $("sel-all").checked = true;
+    // Populate the per-view filter
+    const viewNames = [...new Set(rows.map(r => r.view))];
+    const sel = $("viewsel");
+    sel.innerHTML = "";
+    const optAll = document.createElement("option");
+    optAll.value = ""; optAll.textContent = "All views (" + rows.length + ")";
+    sel.appendChild(optAll);
+    for (const vn of viewNames) {
+      const o = document.createElement("option");
+      o.value = vn;
+      o.textContent = vn + " (" + rows.filter(r => r.view === vn).length + ")";
+      sel.appendChild(o);
+    }
+    $("filter-bar").style.display = "flex";
+
     renderTable();
-    setStatus(rows.length + " point(s) extracted from " + list.length + " View(s). Check the ones you need, set a file name, then download.", "ok");
+    setStatus(rows.length + " point(s) extracted from " + list.length + " View(s). Check the ones you need — Shift-click selects a range — then download.", "ok");
   } catch (err) {
     log("extract failed", err);
     setStatus("Failed: " + err.message, "err");
@@ -289,8 +341,10 @@ function download() {
 
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
+$("viewsel").addEventListener("change", () => { lastIdx = null; renderTable(); });
 $("sel-all").addEventListener("change", (e) => {
-  rows.forEach(r => r.sel = e.target.checked);
+  visibleRows().forEach(x => x.r.sel = e.target.checked);
+  lastIdx = null;
   renderTable();
 });
 init().catch(err => setStatus("Could not connect to Trimble Connect: " + err.message, "err"));
