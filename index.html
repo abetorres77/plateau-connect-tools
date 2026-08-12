@@ -123,12 +123,14 @@ async function init() {
     }
   });
 
+  const ICON = "https://abetorres77.github.io/plateau-connect-tools/icon.png";
   await API.ui.setMenu({
     title: "Plateau Tools",
+    icon: ICON,
     command: "main",
     subMenus: [
-      { title: "Point Extractor", command: "extract" },
-      { title: "About", command: "about" }
+      { title: "Point Extractor", icon: ICON, command: "extract" },
+      { title: "About", icon: ICON, command: "about" }
     ]
   });
 
