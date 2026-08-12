@@ -247,10 +247,10 @@ function renderTable() {
 }
 
 function updateCount() {
-  const n = rows.filter(r => r.sel).length;
-  const vis = visibleRows().length;
+  const vis = visibleRows();
+  const n = vis.filter(x => x.r.sel).length;
   const v = $("viewsel").value;
-  $("sel-count").textContent = n + " of " + rows.length + " point(s) selected" + (v ? " (" + vis + " shown from this view)" : "");
+  $("sel-count").textContent = n + " of " + vis.length + " shown point(s) will export" + (v ? " (view: " + v + ")" : "");
   $("btn-download").disabled = n === 0;
 }
 
@@ -325,7 +325,7 @@ async function extract() {
 }
 
 function download() {
-  const selected = rows.filter(r => r.sel);
+  const selected = visibleRows().map(x => x.r).filter(r => r.sel);
   if (!selected.length) return;
   let pnum = parseInt($("startnum").value, 10) || 1000;
   const csv = selected.map(r => [pnum++, r.n, r.e, r.z, r.d].join(",")).join("\r\n") + "\r\n";
