@@ -1,6 +1,7 @@
 {
   "title": "Plateau Tools",
   "url": "https://abetorres77.github.io/plateau-connect-tools/index.html",
+  "icon": "https://abetorres77.github.io/plateau-connect-tools/icon.png",
   "description": "Plateau Excavation field tools: extract single-point measurements from saved Views to PNEZD CSV.",
   "enabled": true
 }
