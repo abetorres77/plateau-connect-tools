@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plateau Tools</title>
+<style>
+  :root {
+    --navy: #1b2a41;
+    --orange: #e87722;
+    --paper: #f7f8fa;
+    --ink: #22303c;
+    --soft: #5c6b78;
+    --line: #d9dfe5;
+    --ok: #1e7d3c;
+    --err: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Segoe UI", -apple-system, sans-serif; font-size: 14px; line-height: 1.5;
+  }
+  header {
+    background: var(--navy); color: #fff; padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  header .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--orange); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  main { max-width: 720px; margin: 0 auto; padding: 16px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 10px 0; }
+  label { display: block; font-size: 12px; color: var(--soft); margin-bottom: 3px; }
+  select, input {
+    font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink);
+  }
+  input[type="number"] { width: 90px; }
+  button {
+    font: inherit; font-weight: 600; padding: 8px 16px; border: none; border-radius: 6px;
+    background: var(--orange); color: #fff; cursor: pointer;
+  }
+  button.secondary { background: var(--navy); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #status { font-size: 13px; color: var(--soft); min-height: 1.2em; margin-top: 8px; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  .table-scroll { overflow-x: auto; margin-top: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--soft); }
+  .muted { color: var(--soft); font-size: 13px; }
+  #view-about, #view-extractor { display: none; }
+</style>
+</head>
+<body>
+<header><span class="dot"></span><h1>Plateau Tools</h1></header>
+<main>
+  <div id="view-connecting" class="card">
+    <h2>Connecting to Trimble Connect&hellip;</h2>
+    <p class="muted">If this never finishes, the page is probably open outside of Trimble Connect. It only works as an installed extension.</p>
+  </div>
+
+  <div id="view-extractor">
+    <div class="card">
+      <h2>Point Extractor — saved Views &rarr; PNEZD CSV</h2>
+      <p class="muted">Walks every saved View in this project, pulls out single-point measurements, and builds a P,N,E,Z,Description CSV. Description comes from the View name.</p>
+      <div class="row">
+        <span><label for="units">Output units</label>
+          <select id="units">
+            <option value="usft" selected>US survey feet</option>
+            <option value="ift">International feet</option>
+            <option value="m">Meters</option>
+          </select></span>
+        <span><label for="startnum">Start point #</label>
+          <input type="number" id="startnum" value="1000"></span>
+        <span><label for="decimals">Decimals</label>
+          <input type="number" id="decimals" value="3" min="0" max="6"></span>
+        <button id="btn-extract">Extract points</button>
+        <button id="btn-download" class="secondary" disabled>Download CSV</button>
+      </div>
+      <div id="status"></div>
+      <div class="table-scroll"><table id="preview" hidden>
+        <thead><tr><th>P</th><th>N (Northing)</th><th>E (Easting)</th><th>Z (Elev)</th><th>Description</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div id="view-about" class="card">
+    <h2>About</h2>
+    <p>Plateau Excavation field tools for Trimble Connect. Coordinates are stored by Connect in millimeters; this tool converts using 1 usft = 1200/3937 m (divide mm by 304.800609601).</p>
+    <p class="muted">Questions: abe.torres@plateauexcavation.com</p>
+  </div>
+</main>
+
+<script type="module">
+import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
+
+const USFT_MM = 304.800609601;   // 1 US survey foot in mm
+const IFT_MM  = 304.8;
+
+let API = null;
+let accessToken = null;
+let rows = [];                    // extracted points
+
+const $ = (id) => document.getElementById(id);
+const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
+
+function show(view) {
+  for (const v of ["connecting", "extractor", "about"]) {
+    $("view-" + v).style.display = (v === view) ? "block" : "none";
+  }
+}
+
+async function init() {
+  API = await WorkspaceAPI.connect(window.parent, (event, args) => {
+    if (event === "extension.command") {
+      const cmd = args && args.data;
+      if (cmd === "about") show("about");
+      else show("extractor");
+    } else if (event === "extension.accessToken") {
+      if (args && args.data && args.data !== "pending") accessToken = args.data;
+    }
+  });
+
+  await API.ui.setMenu({
+    title: "Plateau Tools",
+    command: "main",
+    subMenus: [
+      { title: "Point Extractor", command: "extract" },
+      { title: "About", command: "about" }
+    ]
+  });
+
+  show("extractor");
+}
+
+async function getToken() {
+  if (accessToken) return accessToken;
+  const result = await API.extension.requestPermission("accesstoken");
+  if (result && result !== "pending") { accessToken = result; return accessToken; }
+  // consent prompt is showing — wait for the extension.accessToken event
+  setStatus("Waiting for you to approve access in Trimble Connect…");
+  await new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const poll = setInterval(() => {
+      if (accessToken) { clearInterval(poll); resolve(); }
+      else if (Date.now() - t0 > 120000) { clearInterval(poll); reject(new Error("Access not approved")); }
+    }, 400);
+  });
+  return accessToken;
+}
+
+async function tcGet(path) {
+  const res = await fetch("https://app.connect.trimble.com/tc/api/2.0" + path, {
+    headers: { Authorization: "Bearer " + accessToken }
+  });
+  if (!res.ok) throw new Error("API " + res.status + " on " + path);
+  return res.json();
+}
+
+async function extract() {
+  rows = [];
+  $("btn-extract").disabled = true;
+  $("btn-download").disabled = true;
+  $("preview").hidden = true;
+  try {
+    await getToken();
+    setStatus("Reading project…");
+    const project = await API.project.getCurrentProject();
+
+    setStatus("Listing saved Views…");
+    const views = await tcGet("/views?projectId=" + encodeURIComponent(project.id));
+    const list = Array.isArray(views) ? views : (views.items || views.views || []);
+    if (!list.length) { setStatus("No saved Views in this project.", "err"); return; }
+
+    const perMm = { usft: USFT_MM, ift: IFT_MM, m: 1000 }[$("units").value];
+    const dec = Math.max(0, Math.min(6, parseInt($("decimals").value, 10) || 3));
+    let pnum = parseInt($("startnum").value, 10) || 1000;
+    const seen = new Set();
+
+    for (let i = 0; i < list.length; i++) {
+      setStatus("Reading View " + (i + 1) + " of " + list.length + "…");
+      const view = await tcGet("/views/" + list[i].id);
+      const markups = view.markups || [];
+      for (const m of markups) {
+        if (m.type !== "measure") continue;
+        const key = m.markupId != null ? m.markupId : (m.id != null ? m.id : JSON.stringify([m.positionX, m.positionY, m.positionZ]));
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (typeof m.positionX !== "number") continue;
+        rows.push({
+          p: pnum++,
+          n: (m.positionY / perMm).toFixed(dec),
+          e: (m.positionX / perMm).toFixed(dec),
+          z: (m.positionZ / perMm).toFixed(dec),
+          d: (view.name || list[i].name || "View").replace(/,/g, " ")
+        });
+      }
+    }
+
+    if (!rows.length) { setStatus("Views found, but no single-point measurements in them.", "err"); return; }
+
+    const tbody = $("preview").querySelector("tbody");
+    tbody.innerHTML = "";
+    for (const r of rows) {
+      const tr = document.createElement("tr");
+      for (const v of [r.p, r.n, r.e, r.z, r.d]) {
+        const td = document.createElement("td");
+        td.textContent = v;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    $("preview").hidden = false;
+    $("btn-download").disabled = false;
+    setStatus(rows.length + " point(s) extracted from " + list.length + " View(s). Ready to download.", "ok");
+  } catch (err) {
+    setStatus("Failed: " + err.message, "err");
+  } finally {
+    $("btn-extract").disabled = false;
+  }
+}
+
+function download() {
+  const csv = rows.map(r => [r.p, r.n, r.e, r.z, r.d].join(",")).join("\r\n") + "\r\n";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "Connect_Points_PNEZD.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$("btn-extract").addEventListener("click", extract);
+$("btn-download").addEventListener("click", download);
+init().catch(err => setStatus("Could not connect to Trimble Connect: " + err.message, "err"));
+</script>
+</body>
+</html>
