@@ -53,8 +53,17 @@
   th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--soft); position: sticky; top: 0; background: #fff; }
   tr.off td { color: var(--soft); }
   .muted { color: var(--soft); font-size: 13px; }
-  #view-about, #view-extractor { display: none; }
+  #view-about, #view-extractor, #view-convert { display: none; }
   #download-bar { display: none; align-items: end; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  #dropzone {
+    border: 2px dashed var(--line); border-radius: 8px; padding: 26px 16px; text-align: center;
+    color: var(--soft); cursor: pointer; margin: 10px 0; transition: border-color .15s, background .15s;
+  }
+  #dropzone.hover { border-color: var(--orange); background: #fff7f0; }
+  #cv-log { font-size: 13px; margin-top: 10px; }
+  #cv-log div { padding: 3px 0; border-bottom: 1px solid var(--line); }
+  #cv-log .ok { color: var(--ok); }
+  #cv-log .err { color: var(--err); }
 </style>
 </head>
 <body>
@@ -106,6 +115,33 @@
     </div>
   </div>
 
+  <div id="view-convert">
+    <div class="card">
+      <h2>File Converter — CSV &harr; TFLX</h2>
+      <p class="muted">CSV / TXT (PNEZD)&nbsp;&nbsp;&rarr;&nbsp;&nbsp;TFLX job for Trimble FieldLink<br>
+      TFLX job&nbsp;&nbsp;&rarr;&nbsp;&nbsp;PNEZD CSV<br>
+      Drop files below or click to browse. Converted files download to your Downloads folder.</p>
+      <div class="row">
+        <span><label for="cv-units">CSV units</label>
+          <select id="cv-units">
+            <option value="usft" selected>US survey feet</option>
+            <option value="ift">International feet</option>
+            <option value="m">Meters</option>
+          </select></span>
+        <span><label for="cv-symbol">Point symbol (CSV &rarr; TFLX)</label>
+          <select id="cv-symbol">
+            <option value="1" selected>Regular points (round symbol)</option>
+            <option value="2">Control points (triangle symbol)</option>
+          </select></span>
+        <span><label for="cv-decimals">Decimals (TFLX &rarr; CSV)</label>
+          <input type="number" id="cv-decimals" value="3" min="0" max="6"></span>
+      </div>
+      <div id="dropzone">Drop CSV, TXT or TFLX files here — or click to browse</div>
+      <input type="file" id="cv-file" multiple accept=".csv,.txt,.tflx" hidden>
+      <div id="cv-log"></div>
+    </div>
+  </div>
+
   <div id="view-about" class="card">
     <h2>About</h2>
     <p>Plateau Excavation field tools for Trimble Connect. Coordinates are stored by Connect in millimeters; this tool converts using 1 usft = 1200/3937 m (divide mm by 304.800609601).</p>
@@ -129,7 +165,7 @@ const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
 
 function show(view) {
-  for (const v of ["connecting", "extractor", "about"]) {
+  for (const v of ["connecting", "extractor", "convert", "about"]) {
     $("view-" + v).style.display = (v === view) ? "block" : "none";
   }
 }
@@ -148,6 +184,7 @@ async function init() {
     if (event === "extension.command") {
       const cmd = args && args.data;
       if (cmd === "about") show("about");
+      else if (cmd === "convert") show("convert");
       else show("extractor");
     } else if (event === "extension.accessToken") {
       const t = tokenFrom(args && args.data !== undefined ? args.data : args);
@@ -162,6 +199,7 @@ async function init() {
     command: "main",
     subMenus: [
       { title: "Point Extractor", icon: ICON, command: "extract" },
+      { title: "File Converter", icon: ICON, command: "convert" },
       { title: "About", icon: ICON, command: "about" }
     ]
   });
@@ -384,63 +422,70 @@ function tsMeta(d) {   // yyyy-MM-ddTHH:mm:ss
     pad(d.getHours(), 2) + ":" + pad(d.getMinutes(), 2) + ":" + pad(d.getSeconds(), 2);
 }
 
+// Build a FieldLink job from points given in meters: [{name, desc, xm, ym, zm}].
+// FieldLink's default layer "0" and all Metadata/Setting rows keep fixed
+// well-known GUIDs in every job; FieldLink and the Connect TrimBIM converter
+// look them up by ID, so they must not be random.
+async function buildTflxBytes(points, layerName, pointType) {
+  const SQL = await ensureSqlJs();
+  const buf = await fetch("./pristine.tflx").then(r => {
+    if (!r.ok) throw new Error("Could not load TFLX template");
+    return r.arrayBuffer();
+  });
+  const db = new SQL.Database(new Uint8Array(buf));
+  const now = new Date();
+  const layer0Id = "8715bb57-27ed-4cd9-85df-c45d86004f5a";
+  const layerId = crypto.randomUUID();
+
+  db.run("BEGIN;");
+  db.run("INSERT INTO Layer VALUES (?,1,'0')", [layer0Id]);
+  db.run("INSERT INTO Layer VALUES (?,1,?)", [layerId, layerName]);
+
+  const t = tsPoint(now);
+  for (const p of points) {
+    // TFLX stores meters: X = Easting, Y = Northing, Z = Elevation
+    db.run("INSERT INTO DesignPoint VALUES (?,?,?,?,?,?,?,?,?,0)",
+      [crypto.randomUUID(), p.desc, layerId, p.name, pointType, p.xm, p.ym, p.zm, t]);
+  }
+
+  const tm = tsMeta(now);
+  const who = "Plateau Tools (Trimble Connect)";
+  const meta = [
+    ["130f4889-ffd5-4fba-8929-101859e34575", "Version", "1.0"],
+    ["68c9ce46-b1ba-45f7-966f-9678586d2ef0", "SupportIndex", "1"],
+    ["5b452f07-5538-44d8-b5ef-6336f1bdab6a", "CreatedDate", tm],
+    ["c0e27d6c-68ab-4640-bbe0-dad01aa80715", "CreatedBy", who],
+    ["12799d3f-3ad3-48ff-bb0c-3762d01db3cd", "ModifiedDate", tm],
+    ["fe62eeb6-a434-402e-b07d-e8000eb26349", "ModifiedBy", who],
+    ["abe22a1d-a741-468e-bb44-90fbfc4dd7bf", "PointsCount", String(points.length)],
+    ["23b70ddf-5134-466f-8415-c4c03f665591", "LinesCount", "0"],
+    ["52bd5127-92f7-4c81-a2d4-1809269074e1", "ArcsCount", "0"],
+    ["e793aecc-f433-42f3-8b56-6532ad3e8ab6", "StakedPointsCount", "0"]
+  ];
+  for (const m of meta) db.run("INSERT INTO Metadata VALUES (?,?,?)", m);
+  db.run("INSERT INTO Setting VALUES ('b18b9361-9a4d-421d-89ae-7e2c5ea6f3a6','HorizontalTolerance','0.0254')");
+  db.run("INSERT INTO Setting VALUES ('529e24e8-8f6b-4d61-be3b-6199f29125d0','VerticalTolerance','0.0254')");
+  db.run("COMMIT;");
+
+  const bytes = db.export();
+  db.close();
+  return bytes;
+}
+
 async function downloadTflx() {
   const selected = exportSelection();
   if (!selected.length) return;
   $("btn-tflx").disabled = true;
   try {
-    setStatus("Loading SQLite engine…");
-    const SQL = await ensureSqlJs();
     setStatus("Building TFLX…");
-    const buf = await fetch("./pristine.tflx").then(r => {
-      if (!r.ok) throw new Error("Could not load TFLX template");
-      return r.arrayBuffer();
-    });
-    const db = new SQL.Database(new Uint8Array(buf));
-
-    const now = new Date();
     const name = exportName(".tflx");
     const pointType = $("ctrlpts").checked ? 2 : 1;   // 1 = design, 2 = control
-    // FieldLink's default layer "0" keeps this well-known GUID in every job;
-    // FieldLink and the Connect TrimBIM converter look it up by ID.
-    const layer0Id = "8715bb57-27ed-4cd9-85df-c45d86004f5a";
-    const layerId = crypto.randomUUID();
-
-    db.run("BEGIN;");
-    db.run("INSERT INTO Layer VALUES (?,1,'0')", [layer0Id]);
-    db.run("INSERT INTO Layer VALUES (?,1,?)", [layerId, name.base]);
-
     let pnum = parseInt($("startnum").value, 10) || 1000;
-    const t = tsPoint(now);
-    for (const r of selected) {
-      // TFLX stores meters: X = Easting, Y = Northing, Z = Elevation
-      db.run("INSERT INTO DesignPoint VALUES (?,?,?,?,?,?,?,?,?,0)",
-        [crypto.randomUUID(), r.d, layerId, String(pnum++), pointType,
-         r.mmx / 1000, r.mmy / 1000, r.mmz / 1000, t]);
-    }
-
-    // Metadata/Setting rows use fixed well-known GUIDs in every FieldLink job.
-    const tm = tsMeta(now);
-    const who = "Plateau Tools (Trimble Connect)";
-    const meta = [
-      ["130f4889-ffd5-4fba-8929-101859e34575", "Version", "1.0"],
-      ["68c9ce46-b1ba-45f7-966f-9678586d2ef0", "SupportIndex", "1"],
-      ["5b452f07-5538-44d8-b5ef-6336f1bdab6a", "CreatedDate", tm],
-      ["c0e27d6c-68ab-4640-bbe0-dad01aa80715", "CreatedBy", who],
-      ["12799d3f-3ad3-48ff-bb0c-3762d01db3cd", "ModifiedDate", tm],
-      ["fe62eeb6-a434-402e-b07d-e8000eb26349", "ModifiedBy", who],
-      ["abe22a1d-a741-468e-bb44-90fbfc4dd7bf", "PointsCount", String(selected.length)],
-      ["23b70ddf-5134-466f-8415-c4c03f665591", "LinesCount", "0"],
-      ["52bd5127-92f7-4c81-a2d4-1809269074e1", "ArcsCount", "0"],
-      ["e793aecc-f433-42f3-8b56-6532ad3e8ab6", "StakedPointsCount", "0"]
-    ];
-    for (const m of meta) db.run("INSERT INTO Metadata VALUES (?,?,?)", m);
-    db.run("INSERT INTO Setting VALUES ('b18b9361-9a4d-421d-89ae-7e2c5ea6f3a6','HorizontalTolerance','0.0254')");
-    db.run("INSERT INTO Setting VALUES ('529e24e8-8f6b-4d61-be3b-6199f29125d0','VerticalTolerance','0.0254')");
-    db.run("COMMIT;");
-
-    const bytes = db.export();
-    db.close();
+    const points = selected.map(r => ({
+      name: String(pnum++), desc: r.d,
+      xm: r.mmx / 1000, ym: r.mmy / 1000, zm: r.mmz / 1000
+    }));
+    const bytes = await buildTflxBytes(points, name.base, pointType);
     saveBlob(new Blob([bytes], { type: "application/octet-stream" }), name.full);
     setStatus("Downloaded " + name.full + " with " + selected.length + " " +
       (pointType === 2 ? "control" : "design") + " point(s), numbered from " +
@@ -452,6 +497,106 @@ async function downloadTflx() {
     $("btn-tflx").disabled = false;
   }
 }
+
+// ---- File Converter: CSV <-> TFLX ----
+
+const UNIT_M = { usft: 1200 / 3937, ift: 0.3048, m: 1 };   // 1 unit in meters
+
+function cvLog(msg, cls) {
+  const div = document.createElement("div");
+  div.textContent = msg;
+  if (cls) div.className = cls;
+  $("cv-log").appendChild(div);
+  div.scrollIntoView({ block: "nearest" });
+}
+
+function parsePnezd(text, fileLabel) {
+  const points = [];
+  const names = new Set();
+  const lines = text.split(/\r\n|\n|\r/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    const f = line.split(",");
+    if (f.length < 4) throw new Error(fileLabel + " line " + (i + 1) + ": expected P,N,E,Z[,D]");
+    const n = parseFloat(f[1]), e = parseFloat(f[2]), z = parseFloat(f[3]);
+    if (isNaN(n) || isNaN(e) || isNaN(z)) {
+      if (i === 0) continue;                     // tolerate a header row
+      throw new Error(fileLabel + " line " + (i + 1) + ": could not read N/E/Z");
+    }
+    const name = f[0].trim();
+    if (names.has(name)) throw new Error(fileLabel + ": duplicate point name '" + name + "' — FieldLink needs unique names");
+    names.add(name);
+    points.push({ name, n, e, z, desc: f.slice(4).join(",").trim() });
+  }
+  if (!points.length) throw new Error(fileLabel + ": no points found");
+  return points;
+}
+
+async function convertCsvFile(file, factor, pointType) {
+  const text = await file.text();
+  const base = file.name.replace(/\.(csv|txt)$/i, "");
+  const pts = parsePnezd(text, file.name).map(p => ({
+    name: p.name, desc: p.desc,
+    xm: p.e * factor, ym: p.n * factor, zm: p.z * factor
+  }));
+  const bytes = await buildTflxBytes(pts, base, pointType);
+  saveBlob(new Blob([bytes], { type: "application/octet-stream" }), base + ".tflx");
+  return pts.length;
+}
+
+async function convertTflxFile(file, factor, dec) {
+  const SQL = await ensureSqlJs();
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const db = new SQL.Database(buf);
+  let rows;
+  try {
+    rows = db.exec("SELECT Name, Y, X, Z, Description FROM DesignPoint ORDER BY CAST(Name AS INTEGER), Name");
+  } finally { db.close(); }
+  if (!rows.length || !rows[0].values.length) throw new Error(file.name + ": no points found");
+  const lines = rows[0].values.map(v => {
+    let desc = v[4] == null ? "" : String(v[4]);
+    if (desc.indexOf(",") >= 0 || desc.indexOf('"') >= 0) desc = '"' + desc.replace(/"/g, '""') + '"';
+    return [v[0], (v[1] / factor).toFixed(dec), (v[2] / factor).toFixed(dec), (v[3] / factor).toFixed(dec), desc].join(",");
+  });
+  const base = file.name.replace(/\.tflx$/i, "");
+  saveBlob(new Blob([lines.join("\r\n") + "\r\n"], { type: "text/csv" }), base + ".csv");
+  return lines.length;
+}
+
+async function convertFiles(files) {
+  const units = $("cv-units").value;
+  const factor = UNIT_M[units];
+  const dec = Math.max(0, Math.min(6, parseInt($("cv-decimals").value, 10) || 3));
+  const pointType = parseInt($("cv-symbol").value, 10);
+  for (const file of files) {
+    try {
+      if (/\.tflx$/i.test(file.name)) {
+        const n = await convertTflxFile(file, factor, dec);
+        cvLog("OK  " + file.name + "  →  " + file.name.replace(/\.tflx$/i, ".csv") + "  (" + n + " points, m → " + units + ")", "ok");
+      } else if (/\.(csv|txt)$/i.test(file.name)) {
+        const n = await convertCsvFile(file, factor, pointType);
+        cvLog("OK  " + file.name + "  →  " + file.name.replace(/\.(csv|txt)$/i, ".tflx") + "  (" + n +
+          (pointType === 2 ? " control" : "") + " points, " + units + " → m)", "ok");
+      } else {
+        cvLog("Skipped " + file.name + " — not a CSV, TXT or TFLX file", "err");
+      }
+    } catch (err) {
+      log("convert failed", err);
+      cvLog("FAILED  " + file.name + "  —  " + err.message, "err");
+    }
+  }
+}
+
+$("dropzone").addEventListener("click", () => $("cv-file").click());
+$("cv-file").addEventListener("change", (e) => { convertFiles([...e.target.files]); e.target.value = ""; });
+$("dropzone").addEventListener("dragover", (e) => { e.preventDefault(); $("dropzone").classList.add("hover"); });
+$("dropzone").addEventListener("dragleave", () => $("dropzone").classList.remove("hover"));
+$("dropzone").addEventListener("drop", (e) => {
+  e.preventDefault();
+  $("dropzone").classList.remove("hover");
+  convertFiles([...e.dataTransfer.files]);
+});
 
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
