@@ -242,6 +242,30 @@ function flatten(op) {
   return flat;
 }
 
+// The viewer's object-level model id is sometimes the ModelSpec.id and sometimes the file
+// versionId (the docs say "modelId equals File.versionId for models stored as files"), so try
+// both, then an unfiltered query, and return the id the viewer actually answered with.
+async function listModelObjects(m) {
+  const attempts = [
+    { via: "id",                 sel: { modelObjectIds: [{ modelId: m.id }] } },
+    { via: "id+recursive",       sel: { modelObjectIds: [{ modelId: m.id, recursive: true }] } },
+    { via: "versionId",          sel: { modelObjectIds: [{ modelId: m.versionId }] } },
+    { via: "versionId+recursive",sel: { modelObjectIds: [{ modelId: m.versionId, recursive: true }] } },
+    { via: "all loaded",         sel: undefined }
+  ];
+  for (const a of attempts) {
+    if (a.sel && !a.sel.modelObjectIds[0].modelId) continue;   // no versionId on this model
+    let res;
+    try { res = await API.viewer.getObjects(a.sel); } catch (e) { log("getObjects failed via " + a.via, e); continue; }
+    let groups = (res || []).filter(r => r && (r.objects || []).length);
+    if (!a.sel) groups = groups.filter(r => r.modelId === m.id || r.modelId === m.versionId || !r.modelId);
+    const ids = groups.flatMap(r => r.objects.map(o => o.id));
+    log("getObjects via " + a.via + ":", ids.length, "objects", groups.map(g => g.modelId));
+    if (ids.length) return { modelId: groups[0].modelId || m.id, ids, via: a.via };
+  }
+  return { modelId: m.id, ids: [], via: "nothing" };
+}
+
 async function readObjects() {
   const ids = checkedModelIds();
   if (!ids.length) throw new Error("Check at least one model.");
@@ -258,17 +282,20 @@ async function readObjects() {
     if (!targets.length) throw new Error("Nothing selected in the viewer (in the checked models). Select objects or switch Scope to Everything.");
     lastScopeLabel = "viewer selection";
   } else {
-    for (const modelId of byModel.keys()) {
-      setStatus("Listing objects in " + byModel.get(modelId).name + "…");
-      let res = await API.viewer.getObjects({ modelObjectIds: [{ modelId }] });
-      let list = (res || []).flatMap(r => r.modelId === modelId || !r.modelId ? (r.objects || []) : []);
-      if (!list.length) {
-        res = await API.viewer.getObjects({ modelObjectIds: [{ modelId, recursive: true }] });
-        list = (res || []).flatMap(r => (r.objects || []));
+    const diag = [];
+    for (const m of byModel.values()) {
+      setStatus("Listing objects in " + m.name + "…");
+      const found = await listModelObjects(m);
+      diag.push(m.name + ": " + found.ids.length + " objects via " + found.via);
+      if (found.ids.length) {
+        targets.push({ modelId: found.modelId, runtimeIds: found.ids });
+        byModel.set(found.modelId, m);          // properties are fetched with the id the viewer answered with
       }
-      targets.push({ modelId, runtimeIds: list.map(o => o.id) });
     }
+    log("object listing:", diag.join(" | "));
     lastScopeLabel = ids.length + " model(s)";
+    if (!targets.length) throw new Error("The viewer returned no objects for the checked model(s). " + diag.join("; ") +
+      ". Wait for the model to finish loading (objects appear in the Models panel tree), then run again.");
   }
 
   const total = targets.reduce((s, t) => s + t.runtimeIds.length, 0);
