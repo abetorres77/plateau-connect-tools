@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plateau QTO</title>
+<style>
+  :root {
+    --navy: #1b2a41; --orange: #e87722; --paper: #f7f8fa; --ink: #22303c;
+    --soft: #5c6b78; --line: #d9dfe5; --ok: #1e7d3c; --err: #b3261e; --warn: #9a6700;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Segoe UI", -apple-system, sans-serif; font-size: 13px; line-height: 1.45; }
+  header { background: var(--navy); color: #fff; padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  main { padding: 10px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .card h2 { font-size: 13px; margin: 0 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin: 8px 0; }
+  label { display: block; font-size: 11px; color: var(--soft); margin-bottom: 2px; }
+  select, input[type="text"] { font: inherit; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); max-width: 100%; }
+  select { min-width: 150px; }
+  input[type="text"] { width: 200px; }
+  button { font: inherit; font-weight: 600; padding: 7px 12px; border: none; border-radius: 6px; background: var(--orange); color: #fff; cursor: pointer; }
+  button.secondary { background: var(--navy); }
+  button.ghost { background: transparent; color: var(--navy); border: 1px solid var(--line); font-weight: 500; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { font-size: 12px; color: var(--soft); min-height: 1.2em; margin-top: 6px; }
+  #status.ok { color: var(--ok); } #status.err { color: var(--err); } #status.warn { color: var(--warn); }
+  .muted { color: var(--soft); font-size: 12px; }
+  .models { display: flex; flex-direction: column; gap: 3px; max-height: 160px; overflow-y: auto; margin: 6px 0; }
+  .models label { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink); margin: 0; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 8px; flex-wrap: wrap; }
+  .tabs button { background: transparent; color: var(--soft); border-radius: 6px 6px 0 0; padding: 6px 10px; font-weight: 600; }
+  .tabs button.active { color: var(--navy); border-bottom: 2px solid var(--orange); }
+  .section { margin-top: 12px; }
+  .section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--soft); margin: 0 0 4px; }
+  .table-scroll { overflow-x: auto; max-height: 55vh; overflow-y: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--soft); position: sticky; top: 0; background: #fff; }
+  td.num, th.num { text-align: right; }
+  tr.sel { cursor: pointer; } tr.sel:hover td { background: #fff7f0; }
+  tr.total td { font-weight: 700; border-top: 2px solid var(--line); }
+  .pill { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 11px; background: #eef1f4; color: var(--soft); }
+  .map-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .map-grid select { width: 100%; min-width: 0; }
+  details summary { cursor: pointer; color: var(--navy); font-weight: 600; font-size: 12px; }
+  pre { font-size: 11px; white-space: pre-wrap; word-break: break-word; background: #f1f3f5; padding: 8px; border-radius: 6px; max-height: 50vh; overflow: auto; }
+  .kpis { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+  .kpi { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-width: 90px; }
+  .kpi b { display: block; font-size: 16px; }
+  .kpi span { font-size: 11px; color: var(--soft); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, structure &amp; fitting takeoff</h1></header>
+<main>
+  <div id="view-connecting" class="card">
+    <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
+    <p class="muted">This tool runs as a 3D Viewer extension. If this never finishes, open a model in the 3D Viewer and launch the extension from the side panel.</p>
+  </div>
+
+  <div id="app" hidden>
+    <div class="card">
+      <h2>1. What to measure</h2>
+      <div class="row" style="justify-content: space-between;">
+        <span class="muted">Loaded models (check the ones to include)</span>
+        <button class="ghost" id="btn-models">Refresh list</button>
+      </div>
+      <div class="models" id="models"><span class="muted">No models loaded yet.</span></div>
+      <div class="row">
+        <span><label for="scope">Scope</label>
+          <select id="scope">
+            <option value="all">Everything in checked models</option>
+            <option value="selected">Only objects selected in the viewer</option>
+          </select></span>
+        <span><label for="units">Report lengths in</label>
+          <select id="units">
+            <option value="usft" selected>US survey feet</option>
+            <option value="ift">International feet</option>
+            <option value="m">Meters</option>
+          </select></span>
+        <span><label for="model-units">Unitless numbers in model are</label>
+          <select id="model-units">
+            <option value="usft" selected>US survey feet</option>
+            <option value="ift">International feet</option>
+            <option value="m">Meters</option>
+            <option value="mm">Millimeters</option>
+          </select></span>
+      </div>
+      <div class="row">
+        <button id="btn-run">Run takeoff</button>
+        <button id="btn-inspect" class="secondary" title="Dump every property of the first object selected in the viewer">Inspect selected object</button>
+        <span class="muted" id="sel-info"></span>
+      </div>
+      <div id="status">Ready.</div>
+    </div>
+
+    <div class="card" id="mapping-card" hidden>
+      <details>
+        <summary>2. Property mapping (auto-detected &mdash; open only if a table looks wrong)</summary>
+        <p class="muted">Each field is read from the first listed property an object actually has. "(auto)" uses the detected order shown in the dropdown. Changing a mapping re-aggregates without re-reading the model.</p>
+        <div class="map-grid" id="map-grid"></div>
+        <div class="row">
+          <label style="font-size:12px;color:var(--ink);display:flex;gap:6px;align-items:center;margin:0">
+            <input type="checkbox" id="skip-null" checked> Ignore Civil 3D "Null Structure" objects</label>
+          <label style="font-size:12px;color:var(--ink);display:flex;gap:6px;align-items:center;margin:0">
+            <input type="checkbox" id="zoom-on-click"> Zoom to objects when a row is clicked</label>
+        </div>
+      </details>
+    </div>
+
+    <div class="card" id="results" hidden>
+      <h2>3. Results <span class="pill" id="res-scope"></span></h2>
+      <div class="kpis" id="kpis"></div>
+      <div class="tabs">
+        <button class="active" data-tab="summary">Summary</button>
+        <button data-tab="network">By network</button>
+        <button data-tab="detail">Detail</button>
+        <button data-tab="other">Unclassified</button>
+      </div>
+      <div id="tab-summary"></div>
+      <div id="tab-network" hidden></div>
+      <div id="tab-detail" hidden></div>
+      <div id="tab-other" hidden></div>
+      <div class="row" style="border-top:1px solid var(--line); padding-top:10px; margin-top:12px;">
+        <span><label for="fname">File name</label><input type="text" id="fname" value="Connect_QTO"></span>
+        <button id="btn-csv-summary" class="secondary">Download summary CSV</button>
+        <button id="btn-csv-detail" class="secondary">Download detail CSV</button>
+        <button id="btn-copy" class="ghost">Copy summary for Excel</button>
+      </div>
+      <p class="muted">Click any row to select those objects in the viewer. Lengths are 3D center-to-center where the model provides them; Length-type properties are converted from Connect's internal millimeters.</p>
+    </div>
+
+    <div class="card" id="inspect-card" hidden>
+      <h2>Object inspector</h2>
+      <p class="muted" id="inspect-meta"></p>
+      <pre id="inspect-out"></pre>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
+
+const log = (...a) => console.log("[PlateauQTO]", ...a);
+const $ = (id) => document.getElementById(id);
+const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
+
+const UNIT_M = { usft: 1200 / 3937, ift: 0.3048, m: 1, mm: 0.001, in: 0.0254 };
+const UNIT_LABEL = { usft: "LF", ift: "LF", m: "m" };
+const CAT = { PIPE: "Pipe", STRUCT: "Structure", FITTING: "Fitting", APPURT: "Appurtenance", OTHER: "Other" };
+const CHUNK = 250;                       // objects per getObjectProperties call
+
+// Field definitions: label + ordered regexes used to auto-detect the property key.
+const FIELDS = {
+  // Regexes are tested against the property name only (the part after "Set · "), so a set called
+  // "Civil3D" cannot make "2D Length" look like a 3D length.
+  type:     { label: "Object type",           auto: [/internal type$/i, /part type$/i, /object ?type$/i, /^type$/i, /\bcategory$/i] },
+  length:   { label: "Pipe length",           auto: [/3d.*length|length.*3d/i, /center.*length|length.*center/i, /^(?!.*2d).*\blength\b/i, /length/i] },
+  size:     { label: "Size",                  auto: [/part size name/i, /nominal ?(diameter|size)/i, /inner diameter/i, /diameter or width/i, /\bsize\b/i, /diameter/i] },
+  material: { label: "Material",              auto: [/\bmaterial\b/i] },
+  network:  { label: "Network",               auto: [/network name/i, /\bnetwork\b/i] },
+  desc:     { label: "Description / part",    auto: [/^information:description$/i, /description$/i, /part family/i, /part name/i, /^name$/i, /\bname$/i] }
+};
+const propName = (key) => { const i = key.lastIndexOf(" · "); return i < 0 ? key : key.slice(i + 3); };
+
+const MAT_WORDS = [
+  [/\bc-?900\b|\bc-?905\b/i, "PVC C900"], [/\bpvc\b|\bsdr\s?\d+/i, "PVC"], [/\bhdpe\b|\bads\b|n-?12|corrugated (poly|plastic)|\bcpp\b/i, "HDPE"],
+  [/\brcp\b|reinforced concrete/i, "RCP"], [/\bdip?\b|ductile/i, "DIP"], [/\bcmp\b|corrugated metal/i, "CMP"],
+  [/\bvcp\b|vitrified|\bclay\b/i, "VCP"], [/cast iron|\bci\b/i, "Cast Iron"], [/\bsteel\b/i, "Steel"],
+  [/\bcopper\b/i, "Copper"], [/\bconcrete\b/i, "Concrete"], [/\bpe\b|polyethylene/i, "PE"]
+];
+
+let API = null;
+let models = [];                          // ModelSpec[] currently loaded
+let objects = [];                         // enriched object records from the last run
+let keyCount = new Map();                 // "Set · Prop" -> number of objects carrying it
+let mapping = {};                         // field -> "" (auto) | explicit key
+let agg = null;
+let lastScopeLabel = "";
+
+// ---------- connection ----------
+
+async function init() {
+  API = await WorkspaceAPI.connect(window.parent, (event, args) => {
+    if (event === "viewer.onSelectionChanged") updateSelInfo(args && args.data);
+    else if (event === "viewer.onModelStateChanged" || event === "viewer.onModelReset") refreshModels().catch(() => {});
+  }, 180000);
+  if (!API.viewer) {
+    $("view-connecting").innerHTML = "<h2>Open this tool inside the 3D Viewer</h2><p class='muted'>Plateau QTO reads the models loaded in the 3D Viewer, so it has to be installed as a 3D Viewer extension (Viewer settings &rarr; Extensions), not a project extension.</p>";
+    return;
+  }
+  $("view-connecting").hidden = true;
+  $("app").hidden = false;
+  await refreshModels();
+  try { updateSelInfo(await API.viewer.getSelection()); } catch (e) { /* ignore */ }
+}
+
+async function refreshModels() {
+  const all = await API.viewer.getModels("loaded");
+  const prev = new Set(checkedModelIds());
+  models = all || [];
+  const box = $("models");
+  box.innerHTML = "";
+  if (!models.length) { box.innerHTML = "<span class='muted'>No models loaded. Load a model in the viewer, then Refresh list.</span>"; return; }
+  for (const m of models) {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = m.id; cb.checked = prev.size ? prev.has(m.id) : true;
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(m.name || m.id));
+    box.appendChild(lab);
+  }
+}
+
+function checkedModelIds() {
+  return [...document.querySelectorAll("#models input:checked")].map(cb => cb.value);
+}
+
+function updateSelInfo(sel) {
+  const n = (sel || []).reduce((s, m) => s + ((m.objectRuntimeIds || []).length), 0);
+  $("sel-info").textContent = n ? n + " object(s) selected in viewer" : "";
+}
+
+// ---------- reading the model ----------
+
+function flatten(op) {
+  const flat = new Map();
+  for (const ps of (op.properties || [])) {
+    const setName = ps.name || "Properties";
+    for (const p of (ps.properties || [])) {
+      if (!p || p.name == null) continue;
+      const key = setName + " · " + p.name;
+      if (p.value === null || p.value === undefined || p.value === "") continue;
+      if (!flat.has(key)) flat.set(key, { v: p.value, t: p.type });
+    }
+  }
+  return flat;
+}
+
+async function readObjects() {
+  const ids = checkedModelIds();
+  if (!ids.length) throw new Error("Check at least one model.");
+  const scope = $("scope").value;
+  const byModel = new Map(models.filter(m => ids.includes(m.id)).map(m => [m.id, m]));
+
+  let targets = [];   // [{modelId, runtimeIds}]
+  if (scope === "selected") {
+    const sel = await API.viewer.getSelection();
+    for (const s of (sel || [])) {
+      if (!byModel.has(s.modelId) || !(s.objectRuntimeIds || []).length) continue;
+      targets.push({ modelId: s.modelId, runtimeIds: s.objectRuntimeIds });
+    }
+    if (!targets.length) throw new Error("Nothing selected in the viewer (in the checked models). Select objects or switch Scope to Everything.");
+    lastScopeLabel = "viewer selection";
+  } else {
+    for (const modelId of byModel.keys()) {
+      setStatus("Listing objects in " + byModel.get(modelId).name + "…");
+      let res = await API.viewer.getObjects({ modelObjectIds: [{ modelId }] });
+      let list = (res || []).flatMap(r => r.modelId === modelId || !r.modelId ? (r.objects || []) : []);
+      if (!list.length) {
+        res = await API.viewer.getObjects({ modelObjectIds: [{ modelId, recursive: true }] });
+        list = (res || []).flatMap(r => (r.objects || []));
+      }
+      targets.push({ modelId, runtimeIds: list.map(o => o.id) });
+    }
+    lastScopeLabel = ids.length + " model(s)";
+  }
+
+  const total = targets.reduce((s, t) => s + t.runtimeIds.length, 0);
+  if (!total) throw new Error("No objects found in the checked models.");
+
+  const out = [];
+  keyCount = new Map();
+  let done = 0;
+  for (const t of targets) {
+    const mname = (byModel.get(t.modelId) || {}).name || t.modelId;
+    for (let i = 0; i < t.runtimeIds.length; i += CHUNK) {
+      const chunk = t.runtimeIds.slice(i, i + CHUNK);
+      setStatus("Reading properties… " + done + " / " + total + " objects");
+      const props = await API.viewer.getObjectProperties(t.modelId, chunk);
+      for (const op of (props || [])) {
+        const flat = flatten(op);
+        for (const k of flat.keys()) keyCount.set(k, (keyCount.get(k) || 0) + 1);
+        out.push({
+          modelId: t.modelId, modelName: mname, id: op.id,
+          cls: op.class || "", pname: (op.product && op.product.name) || "",
+          ptype: (op.product && op.product.objectType) || "", pdesc: (op.product && op.product.description) || "",
+          flat
+        });
+      }
+      done += chunk.length;
+    }
+  }
+  return out;
+}
+
+// ---------- mapping ----------
+
+function autoKeys(field) {
+  const keys = [...keyCount.keys()];
+  const ordered = [];
+  for (const re of FIELDS[field].auto) {
+    const hits = keys.filter(k => re.test(propName(k)) && !ordered.includes(k)).sort((a, b) => keyCount.get(b) - keyCount.get(a));
+    ordered.push(...hits);
+  }
+  return ordered;
+}
+
+function keysFor(field) {
+  return mapping[field] ? [mapping[field]] : autoKeys(field);
+}
+
+function readField(o, field) {
+  for (const k of keysFor(field)) { const p = o.flat.get(k); if (p) return p; }
+  return null;
+}
+
+const str = (p) => p == null ? "" : String(p.v != null ? p.v : p).trim();
+
+function buildMappingUI() {
+  const grid = $("map-grid");
+  grid.innerHTML = "";
+  const allKeys = [...keyCount.keys()].sort((a, b) => a.localeCompare(b));
+  for (const field of Object.keys(FIELDS)) {
+    const wrap = document.createElement("span");
+    const lab = document.createElement("label");
+    lab.textContent = FIELDS[field].label;
+    const sel = document.createElement("select");
+    const auto = autoKeys(field);
+    const o0 = document.createElement("option");
+    o0.value = "";
+    o0.textContent = auto.length ? "(auto) " + auto.slice(0, 3).join("  →  ") + (auto.length > 3 ? "  → …" : "") : "(auto) — nothing detected";
+    sel.appendChild(o0);
+    for (const k of allKeys) {
+      const o = document.createElement("option");
+      o.value = k; o.textContent = k + "  (" + keyCount.get(k) + ")";
+      sel.appendChild(o);
+    }
+    sel.value = mapping[field] && allKeys.includes(mapping[field]) ? mapping[field] : "";
+    sel.addEventListener("change", () => { mapping[field] = sel.value; saveMapping(); aggregate(); render(); });
+    wrap.appendChild(lab); wrap.appendChild(sel);
+    grid.appendChild(wrap);
+  }
+}
+
+function mappingKey() {
+  const ids = checkedModelIds().sort().join("|");
+  let h = 0; for (let i = 0; i < ids.length; i++) h = (h * 31 + ids.charCodeAt(i)) >>> 0;
+  return "pqto.map." + h.toString(16);
+}
+function saveMapping() { try { localStorage.setItem(mappingKey(), JSON.stringify(mapping)); } catch (e) { /* ignore */ } }
+function loadMapping() { try { mapping = JSON.parse(localStorage.getItem(mappingKey()) || "{}") || {}; } catch (e) { mapping = {}; } }
+
+// ---------- interpretation ----------
+
+const norm = (s) => String(s || "").toLowerCase().replace(/[_\s-]+/g, "");
+
+function classify(o, f) {
+  const explicit = norm(f.type) + " " + norm(o.cls) + " " + norm(o.ptype);
+  if (/aeccfitting|aeccpressurefitting|ifcpipefitting/.test(explicit)) return CAT.FITTING;
+  if (/appurtenance|ifcvalve|ifcflowcontroller|ifcflowterminal/.test(explicit)) return CAT.APPURT;
+  if (/aeccstructure|ifcdistributionchamber|junctionstructure|inletoutlet|nullstructure/.test(explicit)) return CAT.STRUCT;
+  if (/aeccpressurepipe|aeccpipe|ifcpipesegment|ifcflowsegment/.test(explicit) || norm(f.type) === "pipe") return CAT.PIPE;
+
+  const t = [f.type, o.cls, o.ptype, o.pname, o.pdesc, f.desc, f.size].filter(Boolean).join(" | ").toLowerCase();
+  if (/\bfitting|\bbend\b|\btee\b|elbow|reducer|\bcross\b|coupling|\bwye\b|\bcap\b|\bplug\b|saddle|adapter|sleeve|flange/.test(t)) return CAT.FITTING;
+  if (/appurtenance|\bvalve|hydrant|\bmeter\b|blow.?off|air release|backflow|thrust block|tapping/.test(t)) return CAT.APPURT;
+  if (/structure|manhole|\bmh\b|inlet|catch ?basin|junction|headwall|clean.?out|\bvault\b|\bgrate\b|riser|end section|\bfes\b|wingwall|\bbox\b/.test(t)) return CAT.STRUCT;
+  if (/\bpipe\b|culvert|conduit|\bmain\b|lateral|force main|\bsewer\b|\bstorm\b|\bwater ?line/.test(t)) return CAT.PIPE;
+  return CAT.OTHER;
+}
+
+// Metric diameters (DN200 = 7.87") snap to the nominal inch size when within 3%.
+const fmtIn = (n) => {
+  const r = Math.round(n);
+  if (r >= 1 && Math.abs(n - r) <= 0.03 * n) n = r;
+  return (Math.round(n * 100) / 100).toString() + '"';
+};
+
+function sizeLabel(f) {
+  for (const p of [f.sizeP, f.descP]) {
+    if (!p) continue;
+    if (p.t === 0 && typeof p.v === "number") return fmtIn(p.v / 25.4);      // LengthMeasure: mm
+    if (typeof p.v === "number") { const n = p.v; return fmtIn(n < 3 ? n * 12 : n > 100 ? n / 25.4 : n); }
+    const s = String(p.v);
+    let m;
+    if ((m = s.match(/(\d+(?:\.\d+)?)\s*(?:"|''|in\b|-?inch)/i))) return fmtIn(+m[1]);
+    if ((m = s.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/i))) return m[1] + "x" + m[2];
+    if ((m = s.match(/(\d+(?:\.\d+)?)\s*mm\b/i))) return fmtIn(+m[1] / 25.4);
+    if ((m = s.match(/^\s*(\d+(?:\.\d+)?)\s*$/))) { const n = +m[1]; return fmtIn(n < 3 ? n * 12 : n > 100 ? n / 25.4 : n); }
+    if ((m = s.match(/\b(\d{1,3}(?:\.\d+)?)\b/))) return fmtIn(+m[1]);
+  }
+  return "(no size)";
+}
+
+function materialLabel(f) {
+  const explicit = str(f.materialP);
+  if (explicit && !/^(none|n\/a|null|undefined|-)$/i.test(explicit)) return explicit;
+  const text = [str(f.sizeP), str(f.descP)].join(" ");
+  for (const [re, name] of MAT_WORDS) if (re.test(text)) return name;
+  return "(not specified)";
+}
+
+// Returns length in meters, or null.
+function lengthMeters(p, modelUnit) {
+  if (!p) return null;
+  if (p.t === 0 && typeof p.v === "number") return p.v / 1000;
+  if (typeof p.v === "number") return isFinite(p.v) ? p.v * UNIT_M[modelUnit] : null;
+  const s = String(p.v).trim().replace(/,/g, "");
+  let m;
+  if ((m = s.match(/^(-?\d+(?:\.\d+)?)\s*'\s*(?:(\d+(?:\.\d+)?)\s*(?:"|''))?$/))) return (+m[1] + (m[2] ? +m[2] / 12 : 0)) * UNIT_M[modelUnit === "m" || modelUnit === "mm" ? "ift" : modelUnit];
+  if ((m = s.match(/^(-?\d+(?:\.\d+)?)\s*(mm|m|ft|feet|'|in|")?\b/i))) {
+    const n = +m[1], u = (m[2] || "").toLowerCase();
+    if (!u) return n * UNIT_M[modelUnit];
+    if (u === "mm") return n / 1000;
+    if (u === "m") return n;
+    if (u === "in" || u === '"') return n * 0.0254;
+    return n * UNIT_M[modelUnit === "m" || modelUnit === "mm" ? "ift" : modelUnit];   // feet
+  }
+  return null;
+}
+
+function interpret(o, modelUnit) {
+  const f = {
+    type: str(readField(o, "type")),
+    sizeP: readField(o, "size"), materialP: readField(o, "material"),
+    descP: readField(o, "desc"), lengthP: readField(o, "length"),
+    network: str(readField(o, "network"))
+  };
+  f.desc = str(f.descP) || o.pname || o.pdesc || o.cls;
+  f.size = str(f.sizeP);
+  const cat = classify(o, f);
+  const isNull = cat === CAT.STRUCT && /null\s*structure/i.test(f.type + " " + f.desc + " " + o.pname);
+  return {
+    o, cat, isNull,
+    desc: f.desc || "(no description)",
+    type: f.type,
+    size: sizeLabel(f),
+    partSize: f.size,
+    material: cat === CAT.PIPE || cat === CAT.FITTING ? materialLabel(f) : str(f.materialP),
+    network: f.network || "(no network)",
+    m: cat === CAT.PIPE ? lengthMeters(f.lengthP, modelUnit) : null
+  };
+}
+
+// ---------- aggregation ----------
+
+function bump(map, key, seed, row) {
+  let e = map.get(key);
+  if (!e) { e = Object.assign({ count: 0, m: 0, refs: [] }, seed); map.set(key, e); }
+  e.count++;
+  if (row.m) e.m += row.m;
+  e.refs.push(row.o);
+  return e;
+}
+
+function aggregate() {
+  const modelUnit = $("model-units").value;
+  const skipNull = $("skip-null").checked;
+  const rows = objects.map(o => interpret(o, modelUnit));
+  agg = { rows, pipe: new Map(), pipeNet: new Map(), struct: new Map(), fit: new Map(), app: new Map(), other: new Map(), skippedNull: 0, pipesNoLength: 0 };
+  for (const r of rows) {
+    if (r.isNull && skipNull) { agg.skippedNull++; continue; }
+    switch (r.cat) {
+      case CAT.PIPE:
+        if (!r.m) agg.pipesNoLength++;
+        bump(agg.pipe, r.size + "||" + r.material, { size: r.size, material: r.material }, r);
+        bump(agg.pipeNet, r.network + "||" + r.size + "||" + r.material, { network: r.network, size: r.size, material: r.material }, r);
+        break;
+      case CAT.STRUCT: bump(agg.struct, r.desc, { desc: r.desc }, r); break;
+      case CAT.FITTING: bump(agg.fit, r.size + "||" + r.desc, { size: r.size, desc: r.desc }, r); break;
+      case CAT.APPURT: bump(agg.app, r.desc, { desc: r.desc }, r); break;
+      default: bump(agg.other, (r.o.cls || "(no class)") + "||" + r.desc, { cls: r.o.cls || "(no class)", desc: r.desc }, r);
+    }
+  }
+}
+
+const sortSize = (a, b) => {
+  const na = parseFloat(a.size), nb = parseFloat(b.size);
+  if (isFinite(na) && isFinite(nb) && na !== nb) return na - nb;
+  return String(a.size).localeCompare(String(b.size)) || String(a.material || "").localeCompare(String(b.material || ""));
+};
+
+function toUnit(m) { return m / UNIT_M[$("units").value]; }
+function fmt(n, d = 1) { return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+// ---------- rendering ----------
+
+function table(cols, rows, totalRow) {
+  const wrap = document.createElement("div");
+  wrap.className = "table-scroll";
+  const t = document.createElement("table");
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  for (const c of cols) { const th = document.createElement("th"); th.textContent = c.h; if (c.num) th.className = "num"; trh.appendChild(th); }
+  thead.appendChild(trh); t.appendChild(thead);
+  const tb = document.createElement("tbody");
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    if (r.refs && r.refs.length) { tr.className = "sel"; tr.title = "Click to select in the viewer"; tr.addEventListener("click", () => selectRefs(r.refs)); }
+    for (const c of cols) { const td = document.createElement("td"); td.textContent = c.f(r); if (c.num) td.className = "num"; tr.appendChild(td); }
+    tb.appendChild(tr);
+  }
+  if (totalRow) {
+    const tr = document.createElement("tr"); tr.className = "total";
+    for (const c of cols) { const td = document.createElement("td"); td.textContent = totalRow[c.h] != null ? totalRow[c.h] : ""; if (c.num) td.className = "num"; tr.appendChild(td); }
+    tb.appendChild(tr);
+  }
+  t.appendChild(tb); wrap.appendChild(t);
+  return wrap;
+}
+
+function section(parent, title, node, note) {
+  const s = document.createElement("div"); s.className = "section";
+  const h = document.createElement("h3"); h.textContent = title; s.appendChild(h);
+  if (note) { const p = document.createElement("p"); p.className = "muted"; p.textContent = note; s.appendChild(p); }
+  s.appendChild(node); parent.appendChild(s);
+}
+
+function render() {
+  const U = UNIT_LABEL[$("units").value];
+  const pipes = [...agg.pipe.values()].sort(sortSize);
+  const pipeLen = pipes.reduce((s, p) => s + p.m, 0);
+  const pipeCount = pipes.reduce((s, p) => s + p.count, 0);
+  const structs = [...agg.struct.values()].sort((a, b) => b.count - a.count || a.desc.localeCompare(b.desc));
+  const fits = [...agg.fit.values()].sort(sortSize);
+  const apps = [...agg.app.values()].sort((a, b) => b.count - a.count || a.desc.localeCompare(b.desc));
+  const others = [...agg.other.values()].sort((a, b) => b.count - a.count);
+  const sum = (arr) => arr.reduce((s, x) => s + x.count, 0);
+
+  $("res-scope").textContent = lastScopeLabel;
+  $("kpis").innerHTML = "";
+  for (const [v, l] of [[fmt(toUnit(pipeLen), 0), "pipe " + U], [pipeCount, "pipe segments"], [sum(structs), "structures"], [sum(fits), "fittings"], [sum(apps), "appurtenances"], [sum(others), "unclassified"]]) {
+    const k = document.createElement("div"); k.className = "kpi"; k.innerHTML = "<b></b><span></span>";
+    k.querySelector("b").textContent = v; k.querySelector("span").textContent = l; $("kpis").appendChild(k);
+  }
+
+  const S = $("tab-summary"); S.innerHTML = "";
+  let note = "";
+  if (agg.pipesNoLength) note += agg.pipesNoLength + " pipe segment(s) had no readable length and count toward segments only. ";
+  if (agg.skippedNull) note += agg.skippedNull + " Null Structure(s) ignored.";
+  section(S, "Pipe by size & material", table(
+    [{ h: "Size", f: r => r.size }, { h: "Material", f: r => r.material }, { h: "Segments", f: r => r.count, num: true }, { h: U, f: r => fmt(toUnit(r.m)), num: true }],
+    pipes, { Size: "TOTAL", Segments: pipeCount, [U]: fmt(toUnit(pipeLen)) }), note || null);
+  section(S, "Structures by type (manholes, inlets, etc.)", table(
+    [{ h: "Structure", f: r => r.desc }, { h: "Count", f: r => r.count, num: true }], structs, { Structure: "TOTAL", Count: sum(structs) }));
+  section(S, "Fittings by size & type", table(
+    [{ h: "Size", f: r => r.size }, { h: "Fitting", f: r => r.desc }, { h: "Count", f: r => r.count, num: true }], fits, { Size: "TOTAL", Count: sum(fits) }));
+  section(S, "Appurtenances (valves, hydrants, etc.)", table(
+    [{ h: "Item", f: r => r.desc }, { h: "Count", f: r => r.count, num: true }], apps, { Item: "TOTAL", Count: sum(apps) }));
+
+  const N = $("tab-network"); N.innerHTML = "";
+  const nets = [...agg.pipeNet.values()].sort((a, b) => a.network.localeCompare(b.network) || sortSize(a, b));
+  section(N, "Pipe by network, size & material", table(
+    [{ h: "Network", f: r => r.network }, { h: "Size", f: r => r.size }, { h: "Material", f: r => r.material }, { h: "Segments", f: r => r.count, num: true }, { h: U, f: r => fmt(toUnit(r.m)), num: true }],
+    nets, { Network: "TOTAL", Segments: pipeCount, [U]: fmt(toUnit(pipeLen)) }));
+
+  const D = $("tab-detail"); D.innerHTML = "";
+  const detail = agg.rows.filter(r => !(r.isNull && $("skip-null").checked));
+  const LIMIT = 1500;
+  section(D, "Every object (" + detail.length + ")", table(
+    [{ h: "Model", f: r => r.o.modelName }, { h: "Category", f: r => r.cat }, { h: "Description", f: r => r.desc }, { h: "Size", f: r => r.size },
+     { h: "Material", f: r => r.material }, { h: "Network", f: r => r.network }, { h: U, f: r => r.m ? fmt(toUnit(r.m)) : "", num: true }],
+    detail.slice(0, LIMIT).map(r => Object.assign({ refs: [r.o] }, r))),
+    detail.length > LIMIT ? "Showing the first " + LIMIT + " rows; the detail CSV has all " + detail.length + "." : null);
+
+  const O = $("tab-other"); O.innerHTML = "";
+  section(O, "Objects that did not classify as pipe, structure, fitting or appurtenance", table(
+    [{ h: "Class", f: r => r.cls }, { h: "Description", f: r => r.desc }, { h: "Count", f: r => r.count, num: true }], others, { Class: "TOTAL", Count: sum(others) }),
+    "Usually model geometry such as surfaces, labels, or reference objects. If a real pipe or structure lands here, fix the Object type or Description mapping above.");
+
+  $("mapping-card").hidden = false;
+  $("results").hidden = false;
+}
+
+async function selectRefs(refs) {
+  const byModel = new Map();
+  for (const o of refs) { if (!byModel.has(o.modelId)) byModel.set(o.modelId, []); byModel.get(o.modelId).push(o.id); }
+  const selector = { modelObjectIds: [...byModel].map(([modelId, ids]) => ({ modelId, objectRuntimeIds: ids })) };
+  try {
+    await API.viewer.setSelection(selector, "set");
+    if ($("zoom-on-click").checked) await API.viewer.setCamera(selector, { animationTime: 400 });
+  } catch (e) { log("select failed", e); }
+}
+
+// ---------- export ----------
+
+function csvCell(v) { const s = v == null ? "" : String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+const csvLine = (arr) => arr.map(csvCell).join(",");
+function saveBlob(blob, filename) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+}
+function fileBase() { return ($("fname").value || "Connect_QTO").trim().replace(/[\\/:*?"<>|]/g, "_").replace(/\.csv$/i, ""); }
+
+function summaryRows(sep) {
+  const U = UNIT_LABEL[$("units").value] + ($("units").value === "m" ? "" : " (" + $("units").value + ")");
+  const L = [];
+  const line = sep === "\t" ? (a) => a.join("\t") : csvLine;
+  L.push(line(["Plateau QTO", lastScopeLabel, new Date().toLocaleString()]));
+  L.push(line(["Models", checkedModelIds().map(id => (models.find(m => m.id === id) || {}).name || id).join("; ")]));
+  L.push("");
+  L.push(line(["PIPE BY SIZE & MATERIAL"])); L.push(line(["Size", "Material", "Segments", U]));
+  const pipes = [...agg.pipe.values()].sort(sortSize);
+  for (const p of pipes) L.push(line([p.size, p.material, p.count, toUnit(p.m).toFixed(1)]));
+  L.push(line(["TOTAL", "", pipes.reduce((s, p) => s + p.count, 0), toUnit(pipes.reduce((s, p) => s + p.m, 0)).toFixed(1)]));
+  L.push("");
+  L.push(line(["PIPE BY NETWORK, SIZE & MATERIAL"])); L.push(line(["Network", "Size", "Material", "Segments", U]));
+  for (const p of [...agg.pipeNet.values()].sort((a, b) => a.network.localeCompare(b.network) || sortSize(a, b))) L.push(line([p.network, p.size, p.material, p.count, toUnit(p.m).toFixed(1)]));
+  L.push("");
+  L.push(line(["STRUCTURES BY TYPE"])); L.push(line(["Structure", "Count"]));
+  const st = [...agg.struct.values()].sort((a, b) => b.count - a.count);
+  for (const s of st) L.push(line([s.desc, s.count]));
+  L.push(line(["TOTAL", st.reduce((s, x) => s + x.count, 0)]));
+  L.push("");
+  L.push(line(["FITTINGS BY SIZE & TYPE"])); L.push(line(["Size", "Fitting", "Count"]));
+  const ft = [...agg.fit.values()].sort(sortSize);
+  for (const f of ft) L.push(line([f.size, f.desc, f.count]));
+  L.push(line(["TOTAL", "", ft.reduce((s, x) => s + x.count, 0)]));
+  L.push("");
+  L.push(line(["APPURTENANCES BY TYPE"])); L.push(line(["Item", "Count"]));
+  const ap = [...agg.app.values()].sort((a, b) => b.count - a.count);
+  for (const a of ap) L.push(line([a.desc, a.count]));
+  L.push(line(["TOTAL", ap.reduce((s, x) => s + x.count, 0)]));
+  L.push("");
+  L.push(line(["UNCLASSIFIED OBJECTS"])); L.push(line(["Class", "Description", "Count"]));
+  for (const o of [...agg.other.values()].sort((a, b) => b.count - a.count)) L.push(line([o.cls, o.desc, o.count]));
+  return L;
+}
+
+function downloadSummary() {
+  const name = fileBase() + "_Summary.csv";
+  saveBlob(new Blob([summaryRows(",").join("\r\n") + "\r\n"], { type: "text/csv" }), name);
+  setStatus("Downloaded " + name, "ok");
+}
+
+function downloadDetail() {
+  const U = UNIT_LABEL[$("units").value] + ($("units").value === "m" ? "" : " (" + $("units").value + ")");
+  const L = [csvLine(["Model", "Category", "Description", "Type", "Size", "Part size / size property", "Material", "Network", U, "Class", "Product name", "Object runtime id"])];
+  for (const r of agg.rows) {
+    if (r.isNull && $("skip-null").checked) continue;
+    L.push(csvLine([r.o.modelName, r.cat, r.desc, r.type, r.size, r.partSize, r.material, r.network, r.m ? toUnit(r.m).toFixed(2) : "", r.o.cls, r.o.pname, r.o.id]));
+  }
+  const name = fileBase() + "_Detail.csv";
+  saveBlob(new Blob([L.join("\r\n") + "\r\n"], { type: "text/csv" }), name);
+  setStatus("Downloaded " + name + " (" + (L.length - 1) + " rows)", "ok");
+}
+
+async function copySummary() {
+  const text = summaryRows("\t").join("\r\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("Summary copied — paste into Excel.", "ok");
+  } catch (e) {
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand && document.execCommand("copy"); ta.remove();
+    setStatus(ok ? "Summary copied — paste into Excel." : "Clipboard blocked by the browser; use Download summary CSV instead.", ok ? "ok" : "warn");
+  }
+}
+
+// ---------- inspector ----------
+
+async function inspect() {
+  try {
+    const sel = await API.viewer.getSelection();
+    const first = (sel || []).find(s => (s.objectRuntimeIds || []).length);
+    if (!first) { setStatus("Select one object in the viewer first.", "warn"); return; }
+    const props = await API.viewer.getObjectProperties(first.modelId, [first.objectRuntimeIds[0]]);
+    const op = (props || [])[0];
+    if (!op) { setStatus("Viewer returned no properties for that object.", "warn"); return; }
+    const mname = (models.find(m => m.id === first.modelId) || {}).name || first.modelId;
+    $("inspect-meta").textContent = mname + " — runtime id " + op.id + " — class " + (op.class || "?") +
+      (op.product ? " — product: " + [op.product.name, op.product.objectType, op.product.description].filter(Boolean).join(" / ") : "");
+    const lines = [];
+    for (const ps of (op.properties || [])) {
+      lines.push("[" + (ps.name || "Properties") + "]");
+      for (const p of (ps.properties || [])) lines.push("  " + p.name + " = " + JSON.stringify(p.value) + "   (type " + p.type + (p.type === 0 ? " = mm" : "") + ")");
+    }
+    $("inspect-out").textContent = lines.join("\n") || "(no property sets)";
+    $("inspect-card").hidden = false;
+    $("inspect-card").scrollIntoView({ behavior: "smooth" });
+    setStatus("Showing properties of the selected object. Use these names to fix the mapping if needed.", "ok");
+  } catch (e) {
+    log("inspect failed", e); setStatus("Inspect failed: " + (e.message || e), "err");
+  }
+}
+
+// ---------- wiring ----------
+
+async function run() {
+  $("btn-run").disabled = true;
+  $("results").hidden = true;
+  try {
+    objects = await readObjects();
+    loadMapping();
+    buildMappingUI();
+    aggregate();
+    render();
+    const n = objects.length;
+    setStatus("Read " + n + " object(s). " + agg.pipe.size + " pipe size/material combos, " + agg.struct.size + " structure types, " + agg.fit.size + " fitting types.", "ok");
+  } catch (e) {
+    log("run failed", e);
+    setStatus("Failed: " + (e.message || e), "err");
+  } finally {
+    $("btn-run").disabled = false;
+  }
+}
+
+$("btn-run").addEventListener("click", run);
+$("btn-models").addEventListener("click", () => refreshModels().catch(e => setStatus("Could not list models: " + e.message, "err")));
+$("btn-inspect").addEventListener("click", inspect);
+$("btn-csv-summary").addEventListener("click", downloadSummary);
+$("btn-csv-detail").addEventListener("click", downloadDetail);
+$("btn-copy").addEventListener("click", copySummary);
+for (const id of ["units", "model-units", "skip-null"]) $(id).addEventListener("change", () => { if (agg) { aggregate(); render(); } });
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
+  for (const t of ["summary", "network", "detail", "other"]) $("tab-" + t).hidden = (t !== b.dataset.tab);
+}));
+
+init().catch(err => {
+  $("view-connecting").innerHTML = "<h2>Could not connect to Trimble Connect</h2><p class='muted'>" + (err.message || err) + "</p>";
+});
+</script>
+</body>
+</html>
