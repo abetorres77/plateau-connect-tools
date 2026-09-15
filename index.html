@@ -203,7 +203,8 @@ async function init() {
     if (API.viewer && typeof API.viewer.getModels === "function") host = "3dviewer";
   }
   log("host:", host);
-  if (host === "3dviewer") { location.replace("./qto.html"); return; }
+  // Cache-bust so a freshly deployed qto.html is picked up immediately (GitHub Pages sends max-age=600).
+  if (host === "3dviewer") { location.replace("./qto.html?v=" + Date.now()); return; }
 
   const ICON = "https://abetorres77.github.io/plateau-connect-tools/icon.png";
   await API.ui.setMenu({
