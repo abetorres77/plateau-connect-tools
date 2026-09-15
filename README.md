@@ -5,7 +5,7 @@ Files in this folder:
 | File | What it is |
 |---|---|
 | `manifest.json` | The one file you register in Trimble Connect. Declares `"extensionType": ["project", "3dviewer"]` so the same "Plateau Tools" entry runs in the project UI **and** in the 3D Viewer. Points at `index.html`. |
-| `index.html` | Entry page. In the project UI it shows Point Extractor (saved Views → PNEZD CSV/TFLX), File Converter, About. Inside the 3D Viewer it detects the host (`extension.getHost()`) and hands over to `qto.html`. |
+| `index.html` | Entry page. In the project UI it builds the left-nav menu: Point Extractor (saved Views → PNEZD CSV/TFLX), File Converter, **QTO** (explains the takeoff and has an "Open the 3D Viewer" button — the takeoff itself runs in the viewer), About. Inside the 3D Viewer it detects the host (`extension.getHost()`) and hands over to `qto.html`. |
 | `qto.html` | **Plateau QTO** — pipe LF by size & material, structures, fittings, appurtenances from the models loaded in the 3D Viewer. See below. |
 | `deploy.ps1` | Publishes changed files to the GitHub Pages repo with the GitHub CLI (`-DryRun` to preview). |
 | `manifest-qto.json` | **Fallback only.** A stand-alone 3D-Viewer-only manifest for `qto.html`, in case the combined manifest does not show up inside the viewer. |
