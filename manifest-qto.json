@@ -1,0 +1,9 @@
+{
+  "title": "Plateau QTO",
+  "url": "https://abetorres77.github.io/plateau-connect-tools/qto.html",
+  "icon": "https://abetorres77.github.io/plateau-connect-tools/icon.png",
+  "description": "Model-based takeoff from the loaded 3D models: pipe LF by size and material, structures (manholes, inlets), fittings and appurtenances. CSV export, click-to-select.",
+  "extensionType": ["3dviewer"],
+  "type": "panel",
+  "enabled": true
+}
