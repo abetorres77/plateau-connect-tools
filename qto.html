@@ -53,6 +53,16 @@
   .kpi b { display: block; font-size: 16px; }
   .kpi span { font-size: 11px; color: var(--soft); }
   [hidden] { display: none !important; }
+  /* Connect's viewer side panel is ~300px wide: tighten everything so the tables fit. */
+  @media (max-width: 420px) {
+    main { padding: 6px; }
+    .card { padding: 8px; }
+    th, td { padding: 2px 5px; font-size: 11px; }
+    .kpi { min-width: 70px; padding: 4px 6px; } .kpi b { font-size: 14px; }
+    button { padding: 6px 9px; font-size: 12px; }
+    select { min-width: 0; }
+    .row { gap: 6px 8px; }
+  }
 </style>
 </head>
 <body>
@@ -162,7 +172,8 @@ const FIELDS = {
   type:     { label: "Object type",           auto: [/internal type$/i, /part type$/i, /object ?type$/i, /^type$/i, /\bcategory$/i] },
   length:   { label: "Pipe length",           auto: [/3d.*length|length.*3d/i, /center.*length|length.*center/i, /^(?!.*2d).*\blength\b/i, /length/i] },
   size:     { label: "Size",                  auto: [/part size name/i, /nominal ?(diameter|size)/i, /inner diameter/i, /diameter or width/i, /\bsize\b/i, /diameter/i] },
-  material: { label: "Material",              auto: [/\bmaterial\b/i] },
+  // Navisworks adds a "3D Visualization · Material = ByLayer" that is not a pipe material.
+  material: { label: "Material",              auto: [/part data:material/i, /^material$/i, /\bmaterial\b/i], skipSets: /3d visualization|^item$|^element$/i },
   network:  { label: "Network",               auto: [/network name/i, /\bnetwork\b/i] },
   desc:     { label: "Description / part",    auto: [/^information:description$/i, /description$/i, /part family/i, /part name/i, /^name$/i, /\bname$/i] }
 };
@@ -329,7 +340,8 @@ async function readObjects() {
 // ---------- mapping ----------
 
 function autoKeys(field) {
-  const keys = [...keyCount.keys()];
+  const skip = FIELDS[field].skipSets;
+  const keys = [...keyCount.keys()].filter(k => !(skip && skip.test(k.slice(0, Math.max(0, k.lastIndexOf(" · "))))));
   const ordered = [];
   for (const re of FIELDS[field].auto) {
     const hits = keys.filter(k => re.test(propName(k)) && !ordered.includes(k)).sort((a, b) => keyCount.get(b) - keyCount.get(a));
@@ -394,6 +406,8 @@ function classify(o, f) {
   if (/aeccstructure|ifcdistributionchamber|junctionstructure|inletoutlet|nullstructure/.test(explicit)) return CAT.STRUCT;
   if (/aeccpressurepipe|aeccpipe|ifcpipesegment|ifcflowsegment/.test(explicit) || norm(f.type) === "pipe") return CAT.PIPE;
 
+  // Hierarchy/group nodes (layers, folders) carry only a name — never count them as parts.
+  if (!f.sizeP && !f.lengthP && !f.network && !f.type && !f.materialP) return CAT.OTHER;
   const t = [f.type, o.cls, o.ptype, o.pname, o.pdesc, f.desc, f.size].filter(Boolean).join(" | ").toLowerCase();
   if (/\bfitting|\bbend\b|\btee\b|elbow|reducer|\bcross\b|coupling|\bwye\b|\bcap\b|\bplug\b|saddle|adapter|sleeve|flange/.test(t)) return CAT.FITTING;
   if (/appurtenance|\bvalve|hydrant|\bmeter\b|blow.?off|air release|backflow|thrust block|tapping/.test(t)) return CAT.APPURT;
@@ -427,7 +441,7 @@ function sizeLabel(f) {
 
 function materialLabel(f) {
   const explicit = str(f.materialP);
-  if (explicit && !/^(none|n\/a|null|undefined|-)$/i.test(explicit)) return explicit;
+  if (explicit && !/^(none|n\/a|null|undefined|-|by ?layer|by ?block|global)$/i.test(explicit)) return explicit;
   const text = [str(f.sizeP), str(f.descP)].join(" ");
   for (const [re, name] of MAT_WORDS) if (re.test(text)) return name;
   return "(not specified)";
@@ -462,7 +476,8 @@ function interpret(o, modelUnit) {
   f.desc = str(f.descP) || o.pname || o.pdesc || o.cls;
   f.size = str(f.sizeP);
   const cat = classify(o, f);
-  const isNull = cat === CAT.STRUCT && /null\s*structure/i.test(f.type + " " + f.desc + " " + o.pname);
+  // Civil 3D null structures can surface under any category depending on the export; drop them all.
+  const isNull = /null\s*structure/i.test([f.type, f.desc, o.pname, f.size].join(" "));
   return {
     o, cat, isNull,
     desc: f.desc || "(no description)",
