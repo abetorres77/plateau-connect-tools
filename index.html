@@ -192,6 +192,19 @@ async function init() {
     }
   });
 
+  // One manifest serves both hosts (extensionType ["project", "3dviewer"]). Inside the
+  // 3D Viewer this page hands over to the QTO tool; in the project UI it builds the menu.
+  let host = "project";
+  try {
+    const h = await API.extension.getHost();
+    if (h && h.name) host = h.name;
+  } catch (e) {
+    log("getHost unavailable, probing viewer API", e);
+    if (API.viewer && typeof API.viewer.getModels === "function") host = "3dviewer";
+  }
+  log("host:", host);
+  if (host === "3dviewer") { location.replace("./qto.html"); return; }
+
   const ICON = "https://abetorres77.github.io/plateau-connect-tools/icon.png";
   await API.ui.setMenu({
     title: "Plateau Tools",
