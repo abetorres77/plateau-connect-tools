@@ -2,6 +2,7 @@
   "title": "Plateau Tools",
   "url": "https://abetorres77.github.io/plateau-connect-tools/index.html",
   "icon": "https://abetorres77.github.io/plateau-connect-tools/icon.png",
-  "description": "Plateau Excavation field tools: extract single-point measurements from saved Views to PNEZD CSV.",
+  "description": "Plateau Excavation tools. Project: Point Extractor (saved Views to PNEZD CSV/TFLX), File Converter. 3D Viewer: QTO - pipe LF by size and material, structures, fittings, appurtenances.",
+  "extensionType": ["project", "3dviewer"],
   "enabled": true
 }
