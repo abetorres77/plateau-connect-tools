@@ -53,7 +53,8 @@
   th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--soft); position: sticky; top: 0; background: #fff; }
   tr.off td { color: var(--soft); }
   .muted { color: var(--soft); font-size: 13px; }
-  #view-about, #view-extractor, #view-convert { display: none; }
+  #view-about, #view-extractor, #view-convert, #view-qto { display: none; }
+  .steps { margin: 8px 0 0 18px; padding: 0; } .steps li { margin: 4px 0; }
   #download-bar { display: none; align-items: end; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
   #dropzone {
     border: 2px dashed var(--line); border-radius: 8px; padding: 26px 16px; text-align: center;
@@ -142,6 +143,24 @@
     </div>
   </div>
 
+  <div id="view-qto">
+    <div class="card">
+      <h2>QTO &mdash; pipe, structure &amp; fitting takeoff</h2>
+      <p class="muted">Pulls quantities straight from the models loaded in the <strong>3D Viewer</strong>: pipe linear footage by size and material, structures (manholes, inlets, cleanouts) by type, fittings by size and type, and appurtenances (valves, hydrants). Click a table row to select those objects in the model; export summary or detail CSV.</p>
+      <p>Because it reads the loaded model geometry, the tool runs inside the 3D Viewer rather than on this page:</p>
+      <ol class="steps">
+        <li>Open the 3D Viewer and load the pipe network model(s) you want to measure.</li>
+        <li>Click the <strong>Plateau Tools</strong> icon (black &amp; gold) at the bottom of the viewer's left toolbar.</li>
+        <li>Check the models to include, pick the scope (everything, or only what is selected), then <strong>Run takeoff</strong>.</li>
+      </ol>
+      <div class="row">
+        <button id="btn-open-viewer">Open the 3D Viewer</button>
+        <span class="muted">Opens this project's 3D Viewer; load a model there, then open Plateau Tools from the left toolbar.</span>
+      </div>
+      <div id="qto-status" class="muted"></div>
+    </div>
+  </div>
+
   <div id="view-about" class="card">
     <h2>About</h2>
     <p>Plateau Excavation field tools for Trimble Connect. Coordinates are stored by Connect in millimeters; this tool converts using 1 usft = 1200/3937 m (divide mm by 304.800609601).</p>
@@ -165,7 +184,7 @@ const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
 
 function show(view) {
-  for (const v of ["connecting", "extractor", "convert", "about"]) {
+  for (const v of ["connecting", "extractor", "convert", "qto", "about"]) {
     $("view-" + v).style.display = (v === view) ? "block" : "none";
   }
 }
@@ -185,6 +204,7 @@ async function init() {
       const cmd = args && args.data;
       if (cmd === "about") show("about");
       else if (cmd === "convert") show("convert");
+      else if (cmd === "qto") show("qto");
       else show("extractor");
     } else if (event === "extension.accessToken") {
       const t = tokenFrom(args && args.data !== undefined ? args.data : args);
@@ -214,6 +234,7 @@ async function init() {
     subMenus: [
       { title: "Point Extractor", icon: ICON, command: "extract" },
       { title: "File Converter", icon: ICON, command: "convert" },
+      { title: "QTO - Pipe & Structure Takeoff", icon: ICON, command: "qto" },
       { title: "About", icon: ICON, command: "about" }
     ]
   });
@@ -612,6 +633,17 @@ $("dropzone").addEventListener("drop", (e) => {
   convertFiles([...e.dataTransfer.files]);
 });
 
+$("btn-open-viewer").addEventListener("click", async () => {
+  const s = $("qto-status");
+  try {
+    s.textContent = "Opening the 3D Viewer…";
+    const ok = await API.extension.goTo("3dviewer");
+    s.textContent = ok === false ? "Connect did not open the viewer. Use the 3D button in the Explorer toolbar instead." : "";
+  } catch (e) {
+    log("goTo failed", e);
+    s.textContent = "Could not open the viewer from here. Use the 3D button in the Explorer toolbar, then open Plateau Tools from the viewer's left toolbar.";
+  }
+});
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
 $("btn-tflx").addEventListener("click", downloadTflx);
