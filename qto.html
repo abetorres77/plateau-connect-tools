@@ -66,7 +66,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.09.18a</span></header>
+<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.09.18b</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -735,8 +735,8 @@ async function inspect() {
 
 // Diagnostic: copy an inventory of every property key (count, type, samples), every class /
 // objectType signature, and a few full example objects per signature, as JSON.
-async function copyInventory() {
-  if (!objects.length) { setStatus("Run the takeoff first, then copy the inventory.", "warn"); return; }
+function buildInventory() {
+  if (!objects.length) return "";
   const keys = {};
   for (const o of objects) for (const [k, p] of o.flat) {
     const e = keys[k] || (keys[k] = { n: 0, t: p.t, samples: [] });
@@ -753,16 +753,45 @@ async function copyInventory() {
     if (ex.length < 2) ex.push({ id: o.id, cls: o.cls, pname: o.pname, ptype: o.ptype, pdesc: o.pdesc,
       props: Object.fromEntries([...o.flat].map(([k, p]) => [k, p.t === 0 ? p.v + " (mm)" : p.v])) });
   }
-  const text = JSON.stringify({ build: $("ver").textContent, models: models.map(m => ({ id: m.id, name: m.name, type: m.type })), objects: objects.length, signatures: sigs, keys, examples }, null, 1);
+  return JSON.stringify({ build: $("ver").textContent, models: models.map(m => ({ id: m.id, name: m.name, type: m.type })), objects: objects.length, signatures: sigs, keys, examples }, null, 1);
+}
+
+async function copyInventory() {
+  const text = buildInventory();
+  if (!text) { setStatus("Run the takeoff first, then copy the inventory.", "warn"); return; }
+  const n = Object.keys(JSON.parse(text).keys).length;
   try {
     await navigator.clipboard.writeText(text);
-    setStatus("Inventory copied (" + Object.keys(keys).length + " keys, " + Object.keys(sigs).length + " signatures).", "ok");
+    setStatus("Inventory copied (" + n + " keys).", "ok");
   } catch (e) {
     const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
     const ok = document.execCommand && document.execCommand("copy"); ta.remove();
-    setStatus(ok ? "Inventory copied (" + Object.keys(keys).length + " keys)." : "Clipboard blocked by the browser.", ok ? "ok" : "warn");
+    setStatus(ok ? "Inventory copied (" + n + " keys)." : "Clipboard blocked by the browser.", ok ? "ok" : "warn");
   }
 }
+
+// Diagnostic hook for the hosting Connect page only: the parent window (and nothing else) may ask
+// this panel to run the takeoff, report its status, or hand back the property inventory. No other
+// origin is answered and no code or parameters from the message are executed.
+const HOST_ORIGIN = /^https:\/\/(web|app)\.connect\.trimble\.com$/;
+window.addEventListener("message", async (e) => {
+  const d = e.data;
+  if (e.source !== window.parent || !HOST_ORIGIN.test(e.origin) || !d || typeof d !== "object" || typeof d.plateauCmd !== "string") return;
+  const reply = (obj) => { try { window.parent.postMessage(Object.assign({ plateauResult: d.plateauCmd }, obj), e.origin); } catch (err) { /* ignore */ } };
+  try {
+    if (d.plateauCmd === "run") {
+      for (const cb of document.querySelectorAll("#models input[type=checkbox]")) cb.checked = true;
+      await run();
+      reply({ status: $("status").textContent, objects: objects.length });
+    } else if (d.plateauCmd === "inventory") {
+      const text = buildInventory();
+      const from = Number.isInteger(d.from) ? d.from : 0;
+      reply({ length: text.length, from, text: text.slice(from, from + 60000) });
+    } else if (d.plateauCmd === "status") {
+      reply({ status: $("status").textContent, objects: objects.length, build: $("ver").textContent, models: models.map(m => m.name) });
+    }
+  } catch (err) { reply({ error: String((err && err.message) || err) }); }
+});
 
 // ---------- wiring ----------
 
