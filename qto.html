@@ -66,7 +66,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.09.15c</span></header>
+<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.09.18a</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -104,6 +104,7 @@
       <div class="row">
         <button id="btn-run">Run takeoff</button>
         <button id="btn-inspect" class="secondary" title="Dump every property of the first object selected in the viewer">Inspect selected object</button>
+        <button id="btn-inv" class="ghost" title="Copy every property key with counts and sample values (diagnostic)">Copy inventory</button>
         <span class="muted" id="sel-info"></span>
       </div>
       <div id="status">Ready.</div>
@@ -731,6 +732,38 @@ async function inspect() {
   }
 }
 
+
+// Diagnostic: copy an inventory of every property key (count, type, samples), every class /
+// objectType signature, and a few full example objects per signature, as JSON.
+async function copyInventory() {
+  if (!objects.length) { setStatus("Run the takeoff first, then copy the inventory.", "warn"); return; }
+  const keys = {};
+  for (const o of objects) for (const [k, p] of o.flat) {
+    const e = keys[k] || (keys[k] = { n: 0, t: p.t, samples: [] });
+    e.n++;
+    const v = typeof p.v === "number" ? p.v : String(p.v);
+    if (e.samples.length < 10 && !e.samples.includes(v)) e.samples.push(v);
+  }
+  const catKey = (o) => { for (const k of o.flat.keys()) if (/category$/i.test(propName(k))) return str(o.flat.get(k)); return ""; };
+  const sigs = {}, examples = {};
+  for (const o of objects) {
+    const sig = [o.modelName, o.cls || "(no class)", catKey(o), o.ptype || ""].join(" | ");
+    sigs[sig] = (sigs[sig] || 0) + 1;
+    const ex = examples[sig] || (examples[sig] = []);
+    if (ex.length < 2) ex.push({ id: o.id, cls: o.cls, pname: o.pname, ptype: o.ptype, pdesc: o.pdesc,
+      props: Object.fromEntries([...o.flat].map(([k, p]) => [k, p.t === 0 ? p.v + " (mm)" : p.v])) });
+  }
+  const text = JSON.stringify({ build: $("ver").textContent, models: models.map(m => ({ id: m.id, name: m.name, type: m.type })), objects: objects.length, signatures: sigs, keys, examples }, null, 1);
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("Inventory copied (" + Object.keys(keys).length + " keys, " + Object.keys(sigs).length + " signatures).", "ok");
+  } catch (e) {
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand && document.execCommand("copy"); ta.remove();
+    setStatus(ok ? "Inventory copied (" + Object.keys(keys).length + " keys)." : "Clipboard blocked by the browser.", ok ? "ok" : "warn");
+  }
+}
+
 // ---------- wiring ----------
 
 async function run() {
@@ -755,6 +788,7 @@ async function run() {
 $("btn-run").addEventListener("click", run);
 $("btn-models").addEventListener("click", () => refreshModels().catch(e => setStatus("Could not list models: " + e.message, "err")));
 $("btn-inspect").addEventListener("click", inspect);
+$("btn-inv").addEventListener("click", copyInventory);
 $("btn-csv-summary").addEventListener("click", downloadSummary);
 $("btn-csv-detail").addEventListener("click", downloadDetail);
 $("btn-copy").addEventListener("click", copySummary);
