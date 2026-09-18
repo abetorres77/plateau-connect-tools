@@ -66,7 +66,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.09.18b</span></header>
+<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.09.18c</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -143,7 +143,7 @@
         <button id="btn-csv-detail" class="secondary">Download detail CSV</button>
         <button id="btn-copy" class="ghost">Copy summary for Excel</button>
       </div>
-      <p class="muted">Click any row to select those objects in the viewer. Lengths are 3D center-to-center where the model provides them; Length-type properties are converted from Connect's internal millimeters.</p>
+      <p class="muted">Click any row to select those objects in the viewer. Lengths are 3D center-to-center where the model provides them (Civil 3D "3D Length", Revit "Length"); Length-type properties are converted from Connect's internal millimeters. Works with Civil 3D and Revit NWC/NWD exports and IFC.</p>
     </div>
 
     <div class="card" id="inspect-card" hidden>
@@ -163,25 +163,54 @@ const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = ms
 
 const UNIT_M = { usft: 1200 / 3937, ift: 0.3048, m: 1, mm: 0.001, in: 0.0254 };
 const UNIT_LABEL = { usft: "LF", ift: "LF", m: "m" };
-const CAT = { PIPE: "Pipe", STRUCT: "Structure", FITTING: "Fitting", APPURT: "Appurtenance", OTHER: "Other" };
+const CAT = { PIPE: "Pipe", STRUCT: "Structure", FITTING: "Fitting", APPURT: "Appurtenance", OTHER: "Other", IGNORED: "Ignored" };
 const CHUNK = 250;                       // objects per getObjectProperties call
 
-// Field definitions: label + ordered regexes used to auto-detect the property key.
+// Revit → Navisworks NWC exports (verified 2026-09-18 on SWITCH_CM_SAN/STORM_PH2B_PEI_3D.nwc): every
+// real element carries a property set called "Element" with its instance parameters (Category,
+// Family, Type, Length, Size, Diameter, System Classification…). Hierarchy nodes (File / Level /
+// Category / Family / Type), geometry leaves ("Solid" — only "Revit Material") and nested
+// components (only "Element ID") have no "Element · Category" and are not takeoff items. Revit also
+// exports sub-elements next to each pipe (its "Center Line", and "Pipe Insulations" used as the
+// clearance envelope) that carry the same Length — counting them would double the LF.
+const REVIT_CAT_KEY = "Element · Category";
+const REVIT_CATS = {
+  pipe:    /^(pipes|flex pipes|pipe placeholders|conduits|ducts|flex ducts|duct placeholders|cable trays)$/,
+  fitting: /^(pipe fittings|conduit fittings|duct fittings|cable tray fittings)$/,
+  appurt:  /^(pipe accessories|duct accessories|plumbing fixtures|plumbing equipment|mechanical equipment|sprinklers|electrical fixtures|electrical equipment|fire alarm devices)$/,
+  struct:  /^(generic models|structural foundations|specialty equipment|site|mass|furniture|casework)$/,
+  sub:     /^(center line|pipe insulations|duct insulations|duct linings|imports in families|lines|detail items|levels|grids|cameras|views|reference planes|curtain panels)$/
+};
+
+// Field definitions: label + ordered matchers used to auto-detect the property key.
+// A matcher is either a regex tested against the property name only (the part after "Set · ", so a
+// set called "Civil3D" cannot make "2D Length" look like a 3D length), or {set, name} which also
+// pins the property-set name — needed for Revit, where dozens of sets have a "Name"/"Type"/"Category".
+const E = (name) => ({ set: /^element$/i, name });          // "Element · <name>" = Revit instance parameter
 const FIELDS = {
-  // Regexes are tested against the property name only (the part after "Set · "), so a set called
-  // "Civil3D" cannot make "2D Length" look like a 3D length.
-  type:     { label: "Object type",           auto: [/internal type$/i, /part type$/i, /object ?type$/i, /^type$/i, /\bcategory$/i] },
-  length:   { label: "Pipe length",           auto: [/3d.*length|length.*3d/i, /center.*length|length.*center/i, /^(?!.*2d).*\blength\b/i, /length/i] },
-  size:     { label: "Size",                  auto: [/part size name/i, /nominal ?(diameter|size)/i, /inner diameter/i, /diameter or width/i, /\bsize\b/i, /diameter/i] },
+  type:     { label: "Object type / category", auto: [/internal type$/i, E(/^category$/i), /part type$/i, /object ?type$/i, /^type$/i, /\bcategory$/i] },
+  length:   { label: "Pipe length",            auto: [E(/^length$/i), /3d.*length|length.*3d/i, /center.*length|length.*center/i, /^(?!.*2d).*\blength\b/i, /length/i] },
+  size:     { label: "Size",                   auto: [/part size name/i, E(/^size$/i), E(/^diameter$/i), E(/^nominal (diameter|radius)$/i), /nominal ?(diameter|size)/i, /inner diameter/i, /diameter or width/i, /\bsize\b/i, /diameter/i] },
   // Navisworks adds a "3D Visualization · Material = ByLayer" that is not a pipe material.
-  material: { label: "Material",              auto: [/part data:material/i, /^material$/i, /\bmaterial\b/i], skipSets: /3d visualization|^item$|^element$/i },
-  network:  { label: "Network",               auto: [/network name/i, /\bnetwork\b/i] },
-  desc:     { label: "Description / part",    auto: [/^information:description$/i, /description$/i, /part family/i, /part name/i, /^name$/i, /\bname$/i] }
+  // Revit: "Pipe Segment · Name" = "RCP - Class III" / "Polyvinyl Chloride - Rigid - Schedule 40" keeps the class;
+  // "Revit Material · Name" is the fallback. System Type · Name ("STORM", "SANITARY") is the discipline —
+  // "System Classification" can be misleading (the storm template uses Domestic Cold Water).
+  material: { label: "Material",               auto: [/part data:material/i, E(/^material$/i), { set: /^pipe segment$/i, name: /^name$/i }, { set: /^revit material$/i, name: /^name$/i }, /^material$/i, /\bmaterial\b/i], skipSets: /3d visualization|^item$/i },
+  network:  { label: "Network / system",       auto: [/network name/i, { set: /^system type$/i, name: /^name$/i }, E(/^system classification$/i), E(/^system name$/i), /\bnetwork\b/i, E(/^workset$/i)] },
+  desc:     { label: "Description / part",     auto: [/^information:description$/i, E(/^description$/i), E(/^family$/i), /description$/i, /part family/i, /part name/i, /^name$/i, /\bname$/i] }
 };
 const propName = (key) => { const i = key.lastIndexOf(" · "); return i < 0 ? key : key.slice(i + 3); };
+const setName = (key) => { const i = key.lastIndexOf(" · "); return i < 0 ? "" : key.slice(0, i); };
+const matches = (m, key) => m instanceof RegExp ? m.test(propName(key)) : (m.set.test(setName(key)) && m.name.test(propName(key)));
 
+// Spelled-out material names (Revit) → trade codes, applied before MAT_WORDS.
+const MAT_LONG = [
+  [/polyvinyl chloride(\s*-\s*rigid)?/i, "PVC"], [/polyethylene\s*-\s*high density|high[- ]density polyethylene/i, "HDPE"],
+  [/reinforced concrete( pipe)?/i, "RCP"], [/ductile iron/i, "DIP"], [/cast iron/i, "CI"], [/(carbon|stainless) steel/i, "Steel"],
+  [/vitrified clay/i, "VCP"], [/corrugated metal( pipe)?/i, "CMP"]
+];
 const MAT_WORDS = [
-  [/\bc-?900\b|\bc-?905\b/i, "PVC C900"], [/\bpvc\b|\bsdr\s?\d+/i, "PVC"], [/\bhdpe\b|\bads\b|n-?12|corrugated (poly|plastic)|\bcpp\b/i, "HDPE"],
+  [/\bc-?900\b|\bc-?905\b/i, "PVC C900"], [/\bpvc\b|\bsdr\s?\d+|polyvinyl/i, "PVC"], [/\bhdpe\b|\bads\b|n-?12|corrugated (poly|plastic)|\bcpp\b|high.?density/i, "HDPE"],
   [/\brcp\b|reinforced concrete/i, "RCP"], [/\bdip?\b|ductile/i, "DIP"], [/\bcmp\b|corrugated metal/i, "CMP"],
   [/\bvcp\b|vitrified|\bclay\b/i, "VCP"], [/cast iron|\bci\b/i, "Cast Iron"], [/\bsteel\b/i, "Steel"],
   [/\bcopper\b/i, "Copper"], [/\bconcrete\b/i, "Concrete"], [/\bpe\b|polyethylene/i, "PE"]
@@ -189,6 +218,7 @@ const MAT_WORDS = [
 
 let API = null;
 let models = [];                          // ModelSpec[] currently loaded
+let knownModelIds = new Set();            // model ids seen by the previous refresh
 let objects = [];                         // enriched object records from the last run
 let keyCount = new Map();                 // "Set · Prop" -> number of objects carrying it
 let mapping = {};                         // field -> "" (auto) | explicit key
@@ -222,11 +252,13 @@ async function refreshModels() {
   for (const m of models) {
     const lab = document.createElement("label");
     const cb = document.createElement("input");
-    cb.type = "checkbox"; cb.value = m.id; cb.checked = prev.size ? prev.has(m.id) : true;
+    // keep the user's choices; a model that finished loading after the last refresh starts checked
+    cb.type = "checkbox"; cb.value = m.id; cb.checked = knownModelIds.size ? (prev.has(m.id) || !knownModelIds.has(m.id)) : true;
     lab.appendChild(cb);
     lab.appendChild(document.createTextNode(m.name || m.id));
     box.appendChild(lab);
   }
+  knownModelIds = new Set(models.map(m => m.id));
 }
 
 function checkedModelIds() {
@@ -344,8 +376,8 @@ function autoKeys(field) {
   const skip = FIELDS[field].skipSets;
   const keys = [...keyCount.keys()].filter(k => !(skip && skip.test(k.slice(0, Math.max(0, k.lastIndexOf(" · "))))));
   const ordered = [];
-  for (const re of FIELDS[field].auto) {
-    const hits = keys.filter(k => re.test(propName(k)) && !ordered.includes(k)).sort((a, b) => keyCount.get(b) - keyCount.get(a));
+  for (const m of FIELDS[field].auto) {
+    const hits = keys.filter(k => matches(m, k) && !ordered.includes(k)).sort((a, b) => keyCount.get(b) - keyCount.get(a));
     ordered.push(...hits);
   }
   return ordered;
@@ -400,7 +432,50 @@ function loadMapping() { try { mapping = JSON.parse(localStorage.getItem(mapping
 
 const norm = (s) => String(s || "").toLowerCase().replace(/[_\s-]+/g, "");
 
+const revitCategory = (o) => str(o.flat.get(REVIT_CAT_KEY));
+
+// What a Revit node without "Element · Category" is, for the "Ignored" table.
+function revitNodeKind(o) {
+  const t = String(o.ptype || "");
+  if (/^(file|category|family|type|solid|levels?)\b/i.test(t)) return "Hierarchy node (" + t.split(":")[0].trim() + ")";
+  if (o.flat.size <= 1) return "Nested component (Element ID only)";
+  return "Other node (" + (t.split(":")[0].trim() || "no type") + ")";
+}
+
+// Plateau's Revit structure families are named "<ID>-<TYPE>" (A11-CB, H8.1-WI, K3-JB., "ST- A1 HW")
+// or "SS-<ID>": the type code is the LAST all-caps 2–3 letter token (ST = storm prefix, HW = the
+// type). Anything else ("Structure", "PLACE HOLDER", "Precast Manhole 60") is reported by family name.
+function structureTypeCode(name) {
+  const codes = String(name || "").split(/[\s\-_.]+/).filter(t => /^[A-Z]{2,3}$/.test(t));
+  return codes.pop() || String(name || "").trim() || "(no family)";
+}
+
+const mmIn = (p) => (p && p.t === 0 && typeof p.v === "number") ? p.v / 25.4 : null;
+// Structure size for Revit families that have no "Element · Size": box Length x Width (feet), else
+// a round OD / diameter parameter (inches).
+function revitStructSize(o) {
+  const g = (k) => o.flat.get("Revit Type · " + k) || o.flat.get("Type · " + k) || o.flat.get("Element · " + k);
+  const ft = (i) => (Math.round(i / 6) / 2).toString() + "'";
+  const L = mmIn(g("Custom box Length")), W = mmIn(g("Custom box Width"));
+  if (L && W) return ft(L) + "x" + ft(W);
+  const od = mmIn(g("Base OD")) || mmIn(g("Diameter")) || mmIn(g("Structure Diameter")) || mmIn(g("Inside Diameter"));
+  return od ? fmtIn(od) : "(no size)";
+}
+
 function classify(o, f) {
+  if (o.revit) {
+    const c = revitCategory(o).toLowerCase();
+    if (!c || REVIT_CATS.sub.test(c)) return CAT.IGNORED;          // hierarchy / geometry / sub-element
+    if (REVIT_CATS.pipe.test(c)) return CAT.PIPE;
+    if (REVIT_CATS.fitting.test(c)) return CAT.FITTING;
+    if (REVIT_CATS.appurt.test(c)) return CAT.APPURT;
+    const t = [f.desc, o.pname, str(o.flat.get("Element · Type"))].filter(Boolean).join(" | ").toLowerCase();
+    const linear = f.lengthP && /duct ?bank|conduit|\bpipe\b|culvert|trench|\bmain\b/.test(t);
+    if (REVIT_CATS.struct.test(c)) return linear ? CAT.PIPE : CAT.STRUCT;
+    if (linear && /structural framing|structural columns|walls|floors/.test(c)) return CAT.PIPE;   // ductbank modeled as framing
+    if (/manhole|\bmh\b|\bvault\b|handhole|pull ?box|inlet|catch ?basin|junction|headwall/.test(t)) return CAT.STRUCT;
+    return CAT.OTHER;                                                 // walls, floors, framing… listed as Unclassified
+  }
   const explicit = norm(f.type) + " " + norm(o.cls) + " " + norm(o.ptype);
   if (/aeccfitting|aeccpressurefitting|ifcpipefitting/.test(explicit)) return CAT.FITTING;
   if (/appurtenance|ifcvalve|ifcflowcontroller|ifcflowterminal/.test(explicit)) return CAT.APPURT;
@@ -442,7 +517,16 @@ function sizeLabel(f) {
 
 function materialLabel(f) {
   const explicit = str(f.materialP);
-  if (explicit && !/^(none|n\/a|null|undefined|-|by ?layer|by ?block|global)$/i.test(explicit)) return explicit;
+  if (explicit && !/^(none|n\/a|null|undefined|-|by ?layer|by ?block|global|default)$/i.test(explicit)) {
+    // Revit material / pipe-segment names spell the material out: "Polyvinyl Chloride - Rigid -
+    // Schedule 40" → "PVC Schedule 40", "RCP - Class III" → "RCP Class III". Short explicit values
+    // ("PVC SDR 35", "RCP", "Ductile Iron") are kept as written.
+    let m = explicit;
+    for (const [re, name] of MAT_LONG) m = m.replace(re, name);
+    m = m.replace(/\s*-\s*/g, " ").replace(/\s+/g, " ").trim();
+    if (m.length > 15) for (const [re, name] of MAT_WORDS) if (re.test(m)) return name;
+    return m;
+  }
   const text = [str(f.sizeP), str(f.descP)].join(" ");
   for (const [re, name] of MAT_WORDS) if (re.test(text)) return name;
   return "(not specified)";
@@ -477,17 +561,29 @@ function interpret(o, modelUnit) {
   f.desc = str(f.descP) || o.pname || o.pdesc || o.cls;
   f.size = str(f.sizeP);
   const cat = classify(o, f);
+  let ignoreKind = "", family = "", system = "", size = null;
+  if (o.revit) {
+    family = str(o.flat.get("Element · Family"));
+    const typeName = str(o.flat.get("Element · Type"));
+    system = str(o.flat.get("Element · System Name"));
+    if (cat === CAT.IGNORED) ignoreKind = revitCategory(o) || revitNodeKind(o);
+    else if (cat === CAT.PIPE) f.desc = typeName || family || f.desc;                 // pipe type name, e.g. "PVC"
+    else if (cat === CAT.STRUCT) { f.desc = structureTypeCode(family || typeName || o.pname); if (!f.sizeP) size = revitStructSize(o); }
+    else f.desc = [family, typeName].filter((x, i, a) => x && a.indexOf(x) === i).join(" : ") || f.desc;
+  }
   // Civil 3D null structures can surface under any category depending on the export; drop them all.
   const isNull = /null\s*structure/i.test([f.type, f.desc, o.pname, f.size].join(" "));
   return {
-    o, cat, isNull,
+    o, cat, isNull, ignoreKind, family, system,
     desc: f.desc || "(no description)",
     type: f.type,
-    size: sizeLabel(f),
+    size: size || sizeLabel(f),
     partSize: f.size,
     material: cat === CAT.PIPE || cat === CAT.FITTING ? materialLabel(f) : str(f.materialP),
     network: f.network || "(no network)",
-    m: cat === CAT.PIPE ? lengthMeters(f.lengthP, modelUnit) : null
+    m: cat === CAT.PIPE ? lengthMeters(f.lengthP, modelUnit) : null,
+    slope: o.revit ? str(o.flat.get("Element · Slope")) : "",
+    invert: o.revit ? lengthMeters(o.flat.get("Element · Lower End Invert Elevation"), modelUnit) : null
   };
 }
 
@@ -505,9 +601,14 @@ function bump(map, key, seed, row) {
 function aggregate() {
   const modelUnit = $("model-units").value;
   const skipNull = $("skip-null").checked;
+  // A model is a Revit export when any of its objects carries "Element · Category".
+  const revitModels = new Set(objects.filter(o => o.flat.has(REVIT_CAT_KEY)).map(o => o.modelId));
+  for (const o of objects) o.revit = revitModels.has(o.modelId);
   const rows = objects.map(o => interpret(o, modelUnit));
-  agg = { rows, pipe: new Map(), pipeNet: new Map(), struct: new Map(), fit: new Map(), app: new Map(), other: new Map(), skippedNull: 0, pipesNoLength: 0 };
+  agg = { rows, pipe: new Map(), pipeNet: new Map(), struct: new Map(), fit: new Map(), app: new Map(), other: new Map(), ignored: new Map(),
+          skippedNull: 0, pipesNoLength: 0, ignoredCount: 0, revit: revitModels.size > 0 };
   for (const r of rows) {
+    if (r.cat === CAT.IGNORED) { agg.ignoredCount++; bump(agg.ignored, r.ignoreKind, { kind: r.ignoreKind }, r); continue; }
     if (r.isNull && skipNull) { agg.skippedNull++; continue; }
     switch (r.cat) {
       case CAT.PIPE:
@@ -515,7 +616,7 @@ function aggregate() {
         bump(agg.pipe, r.size + "||" + r.material, { size: r.size, material: r.material }, r);
         bump(agg.pipeNet, r.network + "||" + r.size + "||" + r.material, { network: r.network, size: r.size, material: r.material }, r);
         break;
-      case CAT.STRUCT: bump(agg.struct, r.desc, { desc: r.desc }, r); break;
+      case CAT.STRUCT: bump(agg.struct, r.desc + "||" + r.size, { desc: r.desc, size: r.size }, r); break;
       case CAT.FITTING: bump(agg.fit, r.size + "||" + r.desc, { size: r.size, desc: r.desc }, r); break;
       case CAT.APPURT: bump(agg.app, r.desc, { desc: r.desc }, r); break;
       default: bump(agg.other, (r.o.cls || "(no class)") + "||" + r.desc, { cls: r.o.cls || "(no class)", desc: r.desc }, r);
@@ -570,7 +671,8 @@ function render() {
   const pipes = [...agg.pipe.values()].sort(sortSize);
   const pipeLen = pipes.reduce((s, p) => s + p.m, 0);
   const pipeCount = pipes.reduce((s, p) => s + p.count, 0);
-  const structs = [...agg.struct.values()].sort((a, b) => b.count - a.count || a.desc.localeCompare(b.desc));
+  const structs = [...agg.struct.values()].sort((a, b) => a.desc.localeCompare(b.desc) || sortSize(a, b));
+  const ignored = [...agg.ignored.values()].sort((a, b) => b.count - a.count);
   const fits = [...agg.fit.values()].sort(sortSize);
   const apps = [...agg.app.values()].sort((a, b) => b.count - a.count || a.desc.localeCompare(b.desc));
   const others = [...agg.other.values()].sort((a, b) => b.count - a.count);
@@ -578,7 +680,9 @@ function render() {
 
   $("res-scope").textContent = lastScopeLabel;
   $("kpis").innerHTML = "";
-  for (const [v, l] of [[fmt(toUnit(pipeLen), 0), "pipe " + U], [pipeCount, "pipe segments"], [sum(structs), "structures"], [sum(fits), "fittings"], [sum(apps), "appurtenances"], [sum(others), "unclassified"]]) {
+  const kpis = [[fmt(toUnit(pipeLen), 0), "pipe " + U], [pipeCount, "pipe segments"], [sum(structs), "structures"], [sum(fits), "fittings"], [sum(apps), "appurtenances"], [sum(others), "unclassified"]];
+  if (agg.ignoredCount) kpis.push([agg.ignoredCount, "Revit nodes ignored"]);
+  for (const [v, l] of kpis) {
     const k = document.createElement("div"); k.className = "kpi"; k.innerHTML = "<b></b><span></span>";
     k.querySelector("b").textContent = v; k.querySelector("span").textContent = l; $("kpis").appendChild(k);
   }
@@ -586,12 +690,14 @@ function render() {
   const S = $("tab-summary"); S.innerHTML = "";
   let note = "";
   if (agg.pipesNoLength) note += agg.pipesNoLength + " pipe segment(s) had no readable length and count toward segments only. ";
-  if (agg.skippedNull) note += agg.skippedNull + " Null Structure(s) ignored.";
+  if (agg.skippedNull) note += agg.skippedNull + " Null Structure(s) ignored. ";
+  if (agg.ignoredCount) note += agg.ignoredCount + " Revit hierarchy / geometry / sub-element node(s) (center lines, insulation) ignored — see the Unclassified tab.";
   section(S, "Pipe by size & material", table(
     [{ h: "Size", f: r => r.size }, { h: "Material", f: r => r.material }, { h: "Segments", f: r => r.count, num: true }, { h: U, f: r => fmt(toUnit(r.m)), num: true }],
     pipes, { Size: "TOTAL", Segments: pipeCount, [U]: fmt(toUnit(pipeLen)) }), note || null);
-  section(S, "Structures by type (manholes, inlets, etc.)", table(
-    [{ h: "Structure", f: r => r.desc }, { h: "Count", f: r => r.count, num: true }], structs, { Structure: "TOTAL", Count: sum(structs) }));
+  section(S, "Structures by type & size (manholes, inlets, etc.)", table(
+    [{ h: "Structure", f: r => r.desc }, { h: "Size", f: r => r.size }, { h: "Count", f: r => r.count, num: true }], structs, { Structure: "TOTAL", Count: sum(structs) }),
+    agg.revit ? "Revit: the type is the code in the family name (A11-CB → CB, SS-J6 → SS); families without a code are listed by name. Size = box L x W or round OD where the family has one." : null);
   section(S, "Fittings by size & type", table(
     [{ h: "Size", f: r => r.size }, { h: "Fitting", f: r => r.desc }, { h: "Count", f: r => r.count, num: true }], fits, { Size: "TOTAL", Count: sum(fits) }));
   section(S, "Appurtenances (valves, hydrants, etc.)", table(
@@ -604,18 +710,21 @@ function render() {
     nets, { Network: "TOTAL", Segments: pipeCount, [U]: fmt(toUnit(pipeLen)) }));
 
   const D = $("tab-detail"); D.innerHTML = "";
-  const detail = agg.rows.filter(r => !(r.isNull && $("skip-null").checked));
+  const detail = agg.rows.filter(r => r.cat !== CAT.IGNORED && !(r.isNull && $("skip-null").checked));
   const LIMIT = 1500;
-  section(D, "Every object (" + detail.length + ")", table(
-    [{ h: "Model", f: r => r.o.modelName }, { h: "Category", f: r => r.cat }, { h: "Description", f: r => r.desc }, { h: "Size", f: r => r.size },
-     { h: "Material", f: r => r.material }, { h: "Network", f: r => r.network }, { h: U, f: r => r.m ? fmt(toUnit(r.m)) : "", num: true }],
-    detail.slice(0, LIMIT).map(r => Object.assign({ refs: [r.o] }, r))),
+  const cols = [{ h: "Model", f: r => r.o.modelName }, { h: "Category", f: r => r.cat }, { h: "Description", f: r => r.desc }];
+  if (agg.revit) cols.push({ h: "Family / ID", f: r => r.family });
+  cols.push({ h: "Size", f: r => r.size }, { h: "Material", f: r => r.material }, { h: "Network", f: r => r.network }, { h: U, f: r => r.m ? fmt(toUnit(r.m)) : "", num: true });
+  section(D, "Every object (" + detail.length + ")", table(cols, detail.slice(0, LIMIT).map(r => Object.assign({ refs: [r.o] }, r))),
     detail.length > LIMIT ? "Showing the first " + LIMIT + " rows; the detail CSV has all " + detail.length + "." : null);
 
   const O = $("tab-other"); O.innerHTML = "";
   section(O, "Objects that did not classify as pipe, structure, fitting or appurtenance", table(
     [{ h: "Class", f: r => r.cls }, { h: "Description", f: r => r.desc }, { h: "Count", f: r => r.count, num: true }], others, { Class: "TOTAL", Count: sum(others) }),
     "Usually model geometry such as surfaces, labels, or reference objects. If a real pipe or structure lands here, fix the Object type or Description mapping above.");
+  if (ignored.length) section(O, "Revit nodes ignored on purpose", table(
+    [{ h: "Kind", f: r => r.kind }, { h: "Count", f: r => r.count, num: true }], ignored, { Kind: "TOTAL", Count: agg.ignoredCount }),
+    "Hierarchy nodes (file, level, category, family, type), geometry leaves, nested components, and Revit sub-elements exported next to each pipe (Center Line, Pipe Insulations = clearance envelope) that would double-count the pipe. Click a row to see them in the viewer.");
 
   $("mapping-card").hidden = false;
   $("results").hidden = false;
@@ -655,10 +764,10 @@ function summaryRows(sep) {
   L.push(line(["PIPE BY NETWORK, SIZE & MATERIAL"])); L.push(line(["Network", "Size", "Material", "Segments", U]));
   for (const p of [...agg.pipeNet.values()].sort((a, b) => a.network.localeCompare(b.network) || sortSize(a, b))) L.push(line([p.network, p.size, p.material, p.count, toUnit(p.m).toFixed(1)]));
   L.push("");
-  L.push(line(["STRUCTURES BY TYPE"])); L.push(line(["Structure", "Count"]));
-  const st = [...agg.struct.values()].sort((a, b) => b.count - a.count);
-  for (const s of st) L.push(line([s.desc, s.count]));
-  L.push(line(["TOTAL", st.reduce((s, x) => s + x.count, 0)]));
+  L.push(line(["STRUCTURES BY TYPE & SIZE"])); L.push(line(["Structure", "Size", "Count"]));
+  const st = [...agg.struct.values()].sort((a, b) => a.desc.localeCompare(b.desc) || sortSize(a, b));
+  for (const s of st) L.push(line([s.desc, s.size, s.count]));
+  L.push(line(["TOTAL", "", st.reduce((s, x) => s + x.count, 0)]));
   L.push("");
   L.push(line(["FITTINGS BY SIZE & TYPE"])); L.push(line(["Size", "Fitting", "Count"]));
   const ft = [...agg.fit.values()].sort(sortSize);
@@ -672,6 +781,11 @@ function summaryRows(sep) {
   L.push("");
   L.push(line(["UNCLASSIFIED OBJECTS"])); L.push(line(["Class", "Description", "Count"]));
   for (const o of [...agg.other.values()].sort((a, b) => b.count - a.count)) L.push(line([o.cls, o.desc, o.count]));
+  if (agg.ignoredCount) {
+    L.push("");
+    L.push(line(["REVIT NODES IGNORED (hierarchy, geometry, center lines, insulation)"])); L.push(line(["Kind", "Count"]));
+    for (const g of [...agg.ignored.values()].sort((a, b) => b.count - a.count)) L.push(line([g.kind, g.count]));
+  }
   return L;
 }
 
@@ -683,10 +797,12 @@ function downloadSummary() {
 
 function downloadDetail() {
   const U = UNIT_LABEL[$("units").value] + ($("units").value === "m" ? "" : " (" + $("units").value + ")");
-  const L = [csvLine(["Model", "Category", "Description", "Type", "Size", "Part size / size property", "Material", "Network", U, "Class", "Product name", "Object runtime id"])];
+  const EL = "Lower invert" + ($("units").value === "m" ? " (m)" : " (" + $("units").value + ")");
+  const L = [csvLine(["Model", "Category", "Description", "Type", "Family / ID", "Size", "Part size / size property", "Material", "Network", "System", U, "Slope", EL, "Class", "Product name", "Object runtime id"])];
   for (const r of agg.rows) {
-    if (r.isNull && $("skip-null").checked) continue;
-    L.push(csvLine([r.o.modelName, r.cat, r.desc, r.type, r.size, r.partSize, r.material, r.network, r.m ? toUnit(r.m).toFixed(2) : "", r.o.cls, r.o.pname, r.o.id]));
+    if (r.cat === CAT.IGNORED || (r.isNull && $("skip-null").checked)) continue;
+    L.push(csvLine([r.o.modelName, r.cat, r.desc, r.type, r.family, r.size, r.partSize, r.material, r.network, r.system, r.m ? toUnit(r.m).toFixed(2) : "",
+                    r.slope, r.invert != null ? toUnit(r.invert).toFixed(2) : "", r.o.cls, r.o.pname, r.o.id]));
   }
   const name = fileBase() + "_Detail.csv";
   saveBlob(new Blob([L.join("\r\n") + "\r\n"], { type: "text/csv" }), name);
@@ -789,6 +905,8 @@ window.addEventListener("message", async (e) => {
       reply({ length: text.length, from, text: text.slice(from, from + 60000) });
     } else if (d.plateauCmd === "status") {
       reply({ status: $("status").textContent, objects: objects.length, build: $("ver").textContent, models: models.map(m => m.name) });
+    } else if (d.plateauCmd === "summary") {
+      reply({ text: agg ? summaryRows("\t").join("\n") : "" });
     }
   } catch (err) { reply({ error: String((err && err.message) || err) }); }
 });
