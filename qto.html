@@ -66,7 +66,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, conduit, ductbank, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.10.21d</span></header>
+<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, conduit, ductbank, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.10.21e</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -182,7 +182,8 @@ const REVIT_CATS = {
   duct:    /^(ducts|flex ducts|duct placeholders)$/,                 // sitework: concrete ductbank modeled as rectangular / round duct
   conduit: /^(conduits|cable trays)$/,
   cfit:    /^(conduit fittings|cable tray fittings)$/,
-  fitting: /^(pipe fittings|duct fittings)$/,
+  dfit:    /^duct fittings$/,                                        // ductbank bends / tees modeled as duct fittings
+  fitting: /^pipe fittings$/,
   appurt:  /^(pipe accessories|duct accessories|plumbing fixtures|plumbing equipment|mechanical equipment|sprinklers|electrical fixtures|electrical equipment|fire alarm devices)$/,
   struct:  /^(generic models|structural foundations|specialty equipment|site|mass|furniture|casework)$/,
   sub:     /^(center line|pipe insulations|duct insulations|duct linings|imports in families|lines|detail items|levels|grids|cameras|views|reference planes|curtain panels)$/
@@ -211,8 +212,11 @@ const FIELDS = {
   service:  { label: "Service type (conduit)",  auto: [E(/^service type$/i), /service type/i] },
   od:       { label: "Outside diameter",        auto: [E(/^outside diameter$/i), /outside diameter|outer diameter/i, /\bod\b/i, E(/^diameter$/i)] },
   // Ductbank / cable tray cross-section and concrete volume. Revit structural framing keeps b / h on the type.
-  width:    { label: "Width (ductbank / tray)",  auto: [E(/^width$/i), T(/^(b|width)$/i), /\bwidth\b/i] },
-  height:   { label: "Height (ductbank / tray)", auto: [E(/^height$/i), T(/^(h|height|depth)$/i), /\bheight\b|\bdepth\b/i] },
+  width:    { label: "Width (ductbank / tray)",  auto: [E(/^width$/i), E(/^(duct )?width ?1$/i), T(/^(b|width)$/i), /\bwidth\b/i] },
+  height:   { label: "Height (ductbank / tray)", auto: [E(/^height$/i), E(/^(duct )?height ?1$/i), T(/^(h|height|depth)$/i), /\bheight\b|\bdepth\b/i] },
+  // Ductbank bends: concrete = section x centerline arc, arc = angle x bend radius.
+  angle:    { label: "Bend angle",              auto: [E(/^angle$/i), E(/^bend angle$/i), /\bangle\b/i] },
+  radius:   { label: "Bend (centerline) radius", auto: [E(/^(center|centre|centerline|centreline|bend) ?-?radius$/i), T(/^(center|centre|centerline|bend) ?-?radius$/i), /center.*radius|bend radius/i, E(/^radius$/i)] },
   volume:   { label: "Volume (ductbank concrete)", auto: [E(/^volume$/i), /net ?volume/i, /gross ?volume/i, /^volume$/i, /\bvolume\b/i], skipSets: /3d visualization|^item$/i },
   smaterial:{ label: "Structural material",     auto: [E(/^structural material$/i), { set: /^revit material$/i, name: /^name$/i }, E(/^material$/i), /structural material/i], skipSets: /3d visualization|^item$/i }
 };
@@ -453,6 +457,7 @@ const norm = (s) => String(s || "").toLowerCase().replace(/[_\s-]+/g, "");
 const MH_WORDS = /manhole|hand ?hole|\bvaults?\b/;
 // Concrete-encased duct banks: "Ductbank", "Duct Bank", "DB-4W2H", "MV Bank 6W", "Telecom Bank".
 const BANK_WORDS = /duct ?-?banks?|\bducts?\b|\bbanks?\b|\bdb-?\d/;
+const BEND_WORDS = /\bbends?\b|elbow|sweep|\btee\b|transition|\bwye\b|fitting|offset/;
 
 const revitCategory = (o) => str(o.flat.get(REVIT_CAT_KEY));
 
@@ -491,9 +496,10 @@ function classify(o, f) {
     if (REVIT_CATS.conduit.test(c)) return CAT.CONDUIT;
     if (REVIT_CATS.duct.test(c)) return CAT.DUCTBANK;
     if (REVIT_CATS.pipe.test(c)) return CAT.PIPE;
-    if (REVIT_CATS.fitting.test(c) || REVIT_CATS.cfit.test(c)) return CAT.FITTING;
+    if (REVIT_CATS.fitting.test(c) || REVIT_CATS.cfit.test(c) || REVIT_CATS.dfit.test(c)) return CAT.FITTING;
     if (REVIT_CATS.appurt.test(c)) return CAT.APPURT;
     const t = [f.desc, o.pname, str(o.flat.get("Element · Type"))].filter(Boolean).join(" | ").toLowerCase();
+    if (BANK_WORDS.test(t) && BEND_WORDS.test(t)) return CAT.FITTING;                           // ductbank bend / tee / transition
     const bank = f.lengthP && BANK_WORDS.test(t);                                               // concrete ductbank modeled as generic / framing
     const raceway = !bank && f.lengthP && /conduit/.test(t);                                     // loose conduit modeled as generic / framing
     const linear = f.lengthP && /\bpipe\b|culvert|trench|\bmain\b/.test(t);
@@ -607,6 +613,13 @@ function volumeM3(p, modelUnit) {
   if (/^(cy|cu\.? ?yd|yd)/.test(u)) return n * Math.pow(0.9144, 3);
   return n;                                                              // m³ / cm
 }
+// Bend angle in degrees, or null. Connect AngleMeasure (t=4) is taken as radians when <= 2π, else degrees.
+function angleDeg(p) {
+  if (!p) return null;
+  if (typeof p.v === "number") return p.t === 4 && p.v <= 2 * Math.PI + 1e-9 ? p.v * 180 / Math.PI : p.v;
+  const m = String(p.v).match(/(-?\d+(?:\.\d+)?)/);
+  return m ? Math.abs(+m[1]) : null;
+}
 const toVol = (m3) => $("units").value === "m" ? m3 : m3 / (Math.pow(UNIT_M[$("units").value], 3) * 27);
 
 // Returns length in meters, or null.
@@ -635,12 +648,13 @@ function interpret(o, modelUnit) {
     descP: readField(o, "desc"), lengthP: readField(o, "length"),
     network: str(readField(o, "network")),
     tradeP: readField(o, "tradeSize"), standardP: readField(o, "standard"), serviceP: readField(o, "service"), odP: readField(o, "od"),
-    widthP: readField(o, "width"), heightP: readField(o, "height"), volumeP: readField(o, "volume"), smaterialP: readField(o, "smaterial")
+    widthP: readField(o, "width"), heightP: readField(o, "height"), volumeP: readField(o, "volume"), smaterialP: readField(o, "smaterial"),
+    angleP: readField(o, "angle"), radiusP: readField(o, "radius")
   };
   f.desc = str(f.descP) || o.pname || o.pdesc || o.cls;
   f.size = str(f.sizeP);
   const cat = classify(o, f);
-  let ignoreKind = "", family = "", system = "", size = null, material = null, network = null, raceway = false, vol = null, volKind = "";
+  let ignoreKind = "", family = "", system = "", size = null, material = null, network = null, raceway = false, bankFit = false, vol = null, volKind = "", angle = null;
   if (o.revit) {
     family = str(o.flat.get("Element · Family"));
     const typeName = str(o.flat.get("Element · Type"));
@@ -663,6 +677,17 @@ function interpret(o, modelUnit) {
       f.desc = [family, typeName].filter((x, i, a) => x && a.indexOf(x) === i).join(" : ") || f.desc;
       size = racewaySize(o, f);
     }
+    else if (cat === CAT.FITTING && (REVIT_CATS.dfit.test(rc) || BANK_WORDS.test((family + " " + typeName).toLowerCase()))) {
+      bankFit = true;
+      f.desc = [family, typeName].filter((x, i, a) => x && a.indexOf(x) === i).join(" : ") || f.desc;
+      const sm = str(f.smaterialP);
+      material = sm ? materialLabel({ materialP: f.smaterialP, sizeP: null, descP: null }) : "(material not in model)";
+      const Wd = mmIn(f.widthP), Ht = mmIn(f.heightP), Dm = mmIn(f.odP);
+      if (Wd && Ht) size = fmtIn(Wd) + "x" + fmtIn(Ht);
+      else if (Dm) size = fmtIn(Dm) + " round";
+      else size = "(no size)";
+      angle = angleDeg(f.angleP);
+    }
     else if (cat === CAT.DUCTBANK) {
       // Concrete ductbank: concrete volume = the model's Volume (mapped "Volume", Revit Element · Volume, m³),
       // else width × height × length from the mapped Width / Height (Revit framing b / h). Material = the
@@ -673,6 +698,7 @@ function interpret(o, modelUnit) {
       const Wd = mmIn(f.widthP), Ht = mmIn(f.heightP), Dm = mmIn(f.odP);
       if (Wd && Ht) size = fmtIn(Wd) + "x" + fmtIn(Ht);
       else if (Dm) size = fmtIn(Dm) + " round";
+      else size = "(no size)";
     }
     else if (cat === CAT.STRUCT) { f.desc = structureTypeCode(family || typeName || o.pname); if (!f.sizeP) size = revitStructSize(o); }
     else {
@@ -684,18 +710,22 @@ function interpret(o, modelUnit) {
   // Civil 3D null structures can surface under any category depending on the export; drop them all.
   const isNull = /null\s*structure/i.test([f.type, f.desc, o.pname, f.size].join(" "));
   const mLen = cat === CAT.PIPE || cat === CAT.CONDUIT || cat === CAT.DUCTBANK ? lengthMeters(f.lengthP, modelUnit) : null;
-  if (cat === CAT.DUCTBANK) {
+  if (cat === CAT.DUCTBANK || bankFit) {
     vol = volumeM3(f.volumeP, modelUnit);
     if (vol != null) volKind = "model";
     else {
       const Wd = mmIn(f.widthP), Ht = mmIn(f.heightP), Dm = mmIn(f.odP);
-      if (Wd && Ht && mLen) { vol = (Wd * 0.0254) * (Ht * 0.0254) * mLen; volKind = "calc"; }
-      else if (Dm && mLen) { vol = Math.PI / 4 * Math.pow(Dm * 0.0254, 2) * mLen; volKind = "round"; }
+      const area = Wd && Ht ? (Wd * 0.0254) * (Ht * 0.0254) : Dm ? Math.PI / 4 * Math.pow(Dm * 0.0254, 2) : null;
+      // bend: centerline arc = angle (rad) x bend radius; a bend exported with a Length uses that instead
+      const rad = bankFit ? lengthMeters(f.radiusP, modelUnit) : null;
+      const arc = bankFit && angle && rad ? angle * Math.PI / 180 * rad : null;
+      const run = bankFit ? (lengthMeters(f.lengthP, modelUnit) || arc) : mLen;
+      if (area && run) { vol = area * run; volKind = bankFit && !lengthMeters(f.lengthP, modelUnit) ? "arc" : Wd && Ht ? "calc" : "round"; }
       else volKind = "none";
     }
   }
   return {
-    o, cat, isNull, ignoreKind, family, system, raceway, vol, volKind,
+    o, cat, isNull, ignoreKind, family, system, raceway, bankFit, vol, volKind, angle,
     desc: f.desc || "(no description)",
     type: f.type,
     size: size || sizeLabel(f),
@@ -727,9 +757,9 @@ function aggregate() {
   const revitModels = new Set(objects.filter(o => o.flat.has(REVIT_CAT_KEY)).map(o => o.modelId));
   for (const o of objects) o.revit = revitModels.has(o.modelId);
   const rows = objects.map(o => interpret(o, modelUnit));
-  agg = { rows, pipe: new Map(), pipeNet: new Map(), conduit: new Map(), conduitNet: new Map(), condFit: new Map(), bank: new Map(),
+  agg = { rows, pipe: new Map(), pipeNet: new Map(), conduit: new Map(), conduitNet: new Map(), condFit: new Map(), bank: new Map(), bankFit: new Map(),
           struct: new Map(), fit: new Map(), app: new Map(), other: new Map(), ignored: new Map(),
-          skippedNull: 0, pipesNoLength: 0, conduitNoLength: 0, bankVol: { model: 0, calc: 0, round: 0, none: 0 }, ignoredCount: 0, revit: revitModels.size > 0 };
+          skippedNull: 0, pipesNoLength: 0, conduitNoLength: 0, bankVol: { model: 0, calc: 0, round: 0, none: 0 }, bankFitVol: { model: 0, arc: 0, calc: 0, round: 0, none: 0 }, ignoredCount: 0, revit: revitModels.size > 0 };
   for (const r of rows) {
     if (r.cat === CAT.IGNORED) { agg.ignoredCount++; bump(agg.ignored, r.ignoreKind, { kind: r.ignoreKind }, r); continue; }
     if (r.isNull && skipNull) { agg.skippedNull++; continue; }
@@ -749,7 +779,10 @@ function aggregate() {
         bump(agg.bank, r.desc + "||" + r.material + "||" + r.size, { desc: r.desc, material: r.material, size: r.size }, r);
         break;
       case CAT.STRUCT: bump(agg.struct, r.desc + "||" + r.size, { desc: r.desc, size: r.size }, r); break;
-      case CAT.FITTING: bump(r.raceway ? agg.condFit : agg.fit, r.size + "||" + r.desc, { size: r.size, desc: r.desc }, r); break;
+      case CAT.FITTING:
+        if (r.bankFit) { agg.bankFitVol[r.volKind]++; bump(agg.bankFit, r.desc + "||" + r.material + "||" + r.size + "||" + (r.angle || ""), { desc: r.desc, material: r.material, size: r.size, angle: r.angle }, r); }
+        else bump(r.raceway ? agg.condFit : agg.fit, r.size + "||" + r.desc, { size: r.size, desc: r.desc }, r);
+        break;
       case CAT.APPURT: { const sz = r.size === "(no size)" ? "" : r.size; bump(agg.app, r.desc + "||" + sz, { desc: r.desc, size: sz }, r); break; }
       default: bump(agg.other, (r.o.cls || "(no class)") + "||" + r.desc, { cls: r.o.cls || "(no class)", desc: r.desc }, r);
     }
@@ -815,7 +848,10 @@ function render() {
   const hasConduit = conduits.length > 0 || condFits.length > 0;
   const V = VOL_LABEL[$("units").value];
   const banks = [...agg.bank.values()].sort((a, b) => a.desc.localeCompare(b.desc) || byMat(a, b));
-  const bankLen = banks.reduce((s, p) => s + p.m, 0), bankVol = banks.reduce((s, p) => s + p.vol, 0), bankCount = banks.reduce((s, p) => s + p.count, 0);
+  const bankLen = banks.reduce((s, p) => s + p.m, 0), bankCount = banks.reduce((s, p) => s + p.count, 0);
+  const bankFits = [...agg.bankFit.values()].sort((a, b) => a.desc.localeCompare(b.desc) || byMat(a, b) || (a.angle || 0) - (b.angle || 0));
+  const bankFitVol = bankFits.reduce((s, p) => s + p.vol, 0), bankFitCount = bankFits.reduce((s, p) => s + p.count, 0);
+  const bankVol = banks.reduce((s, p) => s + p.vol, 0) + bankFitVol;
   const structs = [...agg.struct.values()].sort((a, b) => a.desc.localeCompare(b.desc) || sortSize(a, b));
   const ignored = [...agg.ignored.values()].sort((a, b) => b.count - a.count);
   const fits = [...agg.fit.values()].sort(sortSize);
@@ -827,7 +863,7 @@ function render() {
   $("kpis").innerHTML = "";
   const kpis = [[fmt(toUnit(pipeLen), 0), "pipe " + U], [pipeCount, "pipe segments"]];
   if (hasConduit) kpis.push([fmt(toUnit(condLen), 0), "conduit " + U], [condCount, "conduit runs"], [sum(condFits), "conduit fittings"]);
-  if (banks.length) kpis.push([fmt(toUnit(bankLen), 0), "ductbank " + U], [fmt(toVol(bankVol), 1), "ductbank concrete " + V]);
+  if (banks.length || bankFits.length) kpis.push([fmt(toUnit(bankLen), 0), "ductbank " + U], [bankFitCount, "ductbank bends"], [fmt(toVol(bankVol), 1), "ductbank concrete " + V]);
   kpis.push([sum(structs), "structures"], [sum(fits), "fittings"], [sum(apps), "appurtenances"], [sum(others), "unclassified"]);
   if (agg.ignoredCount) kpis.push([agg.ignoredCount, "Revit nodes ignored"]);
   for (const [v, l] of kpis) {
@@ -852,12 +888,16 @@ function render() {
     section(S, "Conduit fittings by size & type", table(
       [{ h: "Size", f: r => r.size }, { h: "Fitting", f: r => r.desc }, { h: "Count", f: r => r.count, num: true }], condFits, { Size: "TOTAL", Count: sum(condFits) }));
   }
-  if (banks.length) {
-    const bv = agg.bankVol;
+  if (banks.length || bankFits.length) {
+    const bv = agg.bankVol, fv = agg.bankFitVol;
     section(S, "Ductbank concrete by type & material", table(
       [{ h: "Ductbank", f: r => r.desc }, { h: "Material", f: r => r.material }, { h: "Section", f: r => r.size }, { h: "Runs", f: r => r.count, num: true }, { h: U, f: r => fmt(toUnit(r.m)), num: true }, { h: V, f: r => fmt(toVol(r.vol)), num: true }],
-      banks, { Ductbank: "TOTAL", Runs: bankCount, [U]: fmt(toUnit(bankLen)), [V]: fmt(toVol(bankVol)) }),
+      banks, { Ductbank: "TOTAL", Runs: bankCount, [U]: fmt(toUnit(bankLen)), [V]: fmt(toVol(bankVol - bankFitVol)) }),
       "Concrete " + V + " = the model's Volume property (" + bv.model + " run(s)" + (bv.calc ? ", width x height x length for " + bv.calc + " run(s) without one" : "") + (bv.round ? ", round diameter x length for " + bv.round + " run(s)" : "") + (bv.none ? "; " + bv.none + " run(s) have neither a Volume nor a section and contribute 0" : "") + "). Gross envelope — conduits inside the bank are not deducted. Revit Ducts / Duct Placeholders, plus Generic Models or Structural Framing named duct / ductbank / bank / DB-n.");
+    section(S, "Ductbank bends & fittings (concrete)", table(
+      [{ h: "Fitting", f: r => r.desc }, { h: "Material", f: r => r.material }, { h: "Section", f: r => r.size }, { h: "Angle", f: r => r.angle ? r.angle + "°" : "" }, { h: "Count", f: r => r.count, num: true }, { h: V, f: r => fmt(toVol(r.vol), 2), num: true }],
+      bankFits, { Fitting: "TOTAL", Count: bankFitCount, [V]: fmt(toVol(bankFitVol), 2) }),
+      "Revit Duct Fittings and Generic Models named ductbank + bend / elbow / tee / transition. Concrete " + V + " = model Volume (" + fv.model + ")" + (fv.arc ? ", section x centerline arc (angle x bend radius) for " + fv.arc : "") + ((fv.calc + fv.round) ? ", section x Length for " + (fv.calc + fv.round) : "") + (fv.none ? "; " + fv.none + " with no Volume, radius or length contribute 0" : "") + ". The ductbank concrete KPI includes these.");
   }
   section(S, "Structures by type & size (inlets, junction boxes, headwalls, pipe-network structures)", table(
     [{ h: "Structure", f: r => r.desc }, { h: "Size", f: r => r.size }, { h: "Count", f: r => r.count, num: true }], structs, { Structure: "TOTAL", Count: sum(structs) }),
@@ -959,6 +999,14 @@ function summaryRows(sep) {
     L.push(line(["TOTAL", "", "", bk.reduce((s, x) => s + x.count, 0), toUnit(bk.reduce((s, x) => s + x.m, 0)).toFixed(1), toVol(bk.reduce((s, x) => s + x.vol, 0)).toFixed(2)]));
     L.push("");
   }
+  if (agg.bankFit.size) {
+    const V = VOL_LABEL[$("units").value];
+    L.push(line(["DUCTBANK BENDS & FITTINGS (concrete: model Volume, else section x angle x bend radius, else section x length)"])); L.push(line(["Fitting", "Material", "Section", "Angle", "Count", "Concrete " + V]));
+    const bf = [...agg.bankFit.values()].sort((a, b) => a.desc.localeCompare(b.desc) || byMat(a, b) || (a.angle || 0) - (b.angle || 0));
+    for (const b of bf) L.push(line([b.desc, b.material, b.size, b.angle ? b.angle + "°" : "", b.count, toVol(b.vol).toFixed(2)]));
+    L.push(line(["TOTAL", "", "", "", bf.reduce((s, x) => s + x.count, 0), toVol(bf.reduce((s, x) => s + x.vol, 0)).toFixed(2)]));
+    L.push("");
+  }
   L.push(line(["STRUCTURES BY TYPE & SIZE"])); L.push(line(["Structure", "Size", "Count"]));
   const st = [...agg.struct.values()].sort((a, b) => a.desc.localeCompare(b.desc) || sortSize(a, b));
   for (const s of st) L.push(line([s.desc, s.size, s.count]));
@@ -999,7 +1047,7 @@ function downloadDetail() {
     .sort((a, b) => CAT_ORDER.indexOf(a.cat) - CAT_ORDER.indexOf(b.cat) || byMat(a, b) || String(a.network).localeCompare(String(b.network)) || String(a.desc).localeCompare(String(b.desc)));
   for (const r of rows) {
     L.push(csvLine([r.o.modelName, r.cat, r.material, r.size, r.desc, r.type, r.family, r.partSize, r.network, r.system, r.m ? toUnit(r.m).toFixed(2) : "",
-                    r.vol != null ? toVol(r.vol).toFixed(2) : "", { model: "model Volume", calc: "W x H x L", round: "pi/4 x D^2 x L", none: "none" }[r.volKind] || "",
+                    r.vol != null ? toVol(r.vol).toFixed(2) : "", { model: "model Volume", arc: "section x angle x radius", calc: "W x H x L", round: "pi/4 x D^2 x L", none: "none" }[r.volKind] || "",
                     r.slope, r.invert != null ? toUnit(r.invert).toFixed(2) : "", r.o.cls, r.o.pname, r.o.id]));
   }
   const name = fileBase() + "_Detail.csv";
@@ -1121,7 +1169,7 @@ async function run() {
     aggregate();
     render();
     const n = objects.length;
-    setStatus("Read " + n + " object(s). " + agg.pipe.size + " pipe size/material combos, " + (agg.conduit.size ? agg.conduit.size + " conduit size/standard combos, " : "") + (agg.bank.size ? agg.bank.size + " ductbank types, " : "") + agg.struct.size + " structure types, " + agg.fit.size + " fitting types.", "ok");
+    setStatus("Read " + n + " object(s). " + agg.pipe.size + " pipe size/material combos, " + (agg.conduit.size ? agg.conduit.size + " conduit size/standard combos, " : "") + (agg.bank.size ? agg.bank.size + " ductbank types, " : "") + (agg.bankFit.size ? agg.bankFit.size + " ductbank bend types, " : "") + agg.struct.size + " structure types, " + agg.fit.size + " fitting types.", "ok");
   } catch (e) {
     log("run failed", e);
     setStatus("Failed: " + (e.message || e), "err");
