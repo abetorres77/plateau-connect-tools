@@ -179,12 +179,31 @@
     </div>
   </div>
 
+  <div id="view-props">
+    <div class="card">
+      <h2>Object Properties &mdash; what is this thing in the model?</h2>
+      <p class="muted">Select one or more objects in the <strong>3D Viewer</strong> and the panel shows each one's name, description, material, size, type, network, layer, elevations (model and property values) and coordinates, with the full property list underneath. Multi-selections list in a table you can <strong>Copy for Excel</strong> or download as CSV.</p>
+      <p>Because it reads the viewer selection, the tool runs inside the 3D Viewer rather than on this page:</p>
+      <ol class="steps">
+        <li>Open the 3D Viewer and load the model(s).</li>
+        <li>Click the <strong>Plateau Tools</strong> icon (black &amp; gold) at the bottom of the viewer's left toolbar and pick <strong>Object Properties</strong>.</li>
+        <li>Select objects in the model; the panel updates as the selection changes.</li>
+      </ol>
+      <div class="row">
+        <button id="btn-open-viewer-props">Open the 3D Viewer</button>
+        <span class="muted">Opens this project's 3D Viewer with Object Properties as the active tool.</span>
+      </div>
+      <div id="props-status" class="muted"></div>
+    </div>
+  </div>
+
   <div id="view-launcher" style="display:none">
     <div class="card">
       <h2>Plateau Tools</h2>
       <p class="muted">Pick a tool. Each tool has a <b>&#9776; Tools</b> link in its header to come back here.</p>
       <div class="row"><button class="launch" data-tool="qto" style="width:100%;text-align:left">QTO Takeoff<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Pipe LF, structures, fittings, conduit and ductbank from the loaded models</span></button></div>
       <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Find points by number or description and zoom to them</span></button></div>
+      <div class="row"><button class="launch" data-tool="props" style="width:100%;text-align:left">Object Properties<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Description, material, size, layer, elevations and coordinates of the selected objects</span></button></div>
     </div>
   </div>
 
@@ -211,7 +230,7 @@ const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
 
 function show(view) {
-  for (const v of ["connecting", "extractor", "convert", "qto", "points", "about", "launcher"]) {
+  for (const v of ["connecting", "extractor", "convert", "qto", "points", "props", "about", "launcher"]) {
     $("view-" + v).style.display = (v === view) ? "block" : "none";
   }
 }
@@ -233,6 +252,7 @@ async function init() {
       else if (cmd === "convert") show("convert");
       else if (cmd === "qto") show("qto");
       else if (cmd === "points") show("points");
+      else if (cmd === "props") show("props");
       else show("extractor");
     } else if (event === "extension.accessToken") {
       const t = tokenFrom(args && args.data !== undefined ? args.data : args);
@@ -257,7 +277,7 @@ async function init() {
     // the project page's "Open the 3D Viewer" buttons pre-select a tool through localStorage.
     let tool = "menu";
     try { tool = localStorage.getItem("plateau:viewerTool") || "menu"; localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ }
-    if (tool === "qto" || tool === "points") { location.replace("./" + tool + ".html?v=" + Date.now()); return; }
+    if (tool === "qto" || tool === "points" || tool === "props") { location.replace("./" + tool + ".html?v=" + Date.now()); return; }
     show("launcher");
     return;
   }
@@ -270,6 +290,7 @@ async function init() {
     subMenus: [
       { title: "Point Extractor", icon: ICON, command: "extract" },
       { title: "Point Search", icon: ICON, command: "points" },
+      { title: "Object Properties", icon: ICON, command: "props" },
       { title: "File Converter", icon: ICON, command: "convert" },
       { title: "QTO Takeoff", icon: ICON, command: "qto" },
       { title: "About", icon: ICON, command: "about" }
@@ -684,6 +705,7 @@ async function openViewer(tool, s) {
 $("btn-open-viewer").addEventListener("click", () => openViewer("qto", $("qto-status")));
 for (const b of document.querySelectorAll("button.launch")) b.addEventListener("click", () => location.replace("./" + b.dataset.tool + ".html?v=" + Date.now()));
 $("btn-open-viewer-points").addEventListener("click", () => openViewer("points", $("points-status")));
+$("btn-open-viewer-props").addEventListener("click", () => openViewer("props", $("props-status")));
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
 $("btn-tflx").addEventListener("click", downloadTflx);
