@@ -1,0 +1,9 @@
+{
+  "title": "PEI Points",
+  "url": "https://abetorres77.github.io/plateau-connect-tools/points.html",
+  "icon": "https://abetorres77.github.io/plateau-connect-tools/icon.png",
+  "description": "Search survey points by point number, range or description and zoom the 3D Viewer to them. Reads points from the loaded models or from a P,N,E,Z,D point file.",
+  "extensionType": ["3dviewer"],
+  "type": "panel",
+  "enabled": true
+}
