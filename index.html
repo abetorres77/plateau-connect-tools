@@ -164,12 +164,12 @@
   <div id="view-points">
     <div class="card">
       <h2>Point Search &mdash; find a point and zoom to it</h2>
-      <p class="muted">Type a point number, a range (<code>1005-1020</code>), a list (<code>1003,2003</code>) or a description (<code>MH</code>, <code>fire hydrant</code>) and click a result: the <strong>3D Viewer</strong> selects the point and zooms to it. Points come from the models loaded in the viewer (Civil 3D COGO points, survey points) or from a P,N,E,Z,D point file you load or paste, which is remembered per project.</p>
+      <p class="muted">Type a point number, a range (<code>1005-1020</code>), a list (<code>1003,2003</code>) or a description (<code>MH</code>, <code>fire hydrant</code>) and click a result: the <strong>3D Viewer</strong> selects the point and zooms to it. Points come from the models loaded in the viewer (Civil 3D COGO points, survey points).</p>
       <p>Because it moves the viewer camera, the tool runs inside the 3D Viewer rather than on this page:</p>
       <ol class="steps">
-        <li>Open the 3D Viewer and load the model(s) that contain the points (or just the site model if you will use a point file).</li>
+        <li>Open the 3D Viewer and load the model(s) that contain the points.</li>
         <li>Click the <strong>Plateau Tools</strong> icon (black &amp; gold) at the bottom of the viewer's left toolbar and pick <strong>Points</strong> at the top of the panel.</li>
-        <li><strong>Scan models</strong>, or switch to <strong>Point file</strong> and load your CSV, then search.</li>
+        <li><strong>Scan models</strong>, then search.</li>
       </ol>
       <div class="row">
         <button id="btn-open-viewer-points">Open the 3D Viewer</button>
@@ -184,7 +184,7 @@
       <h2>Plateau Tools</h2>
       <p class="muted">Pick a tool. Each tool has a <b>&#9776; Tools</b> link in its header to come back here.</p>
       <div class="row"><button class="launch" data-tool="qto" style="width:100%;text-align:left">QTO Takeoff<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Pipe LF, structures, fittings, conduit and ductbank from the loaded models</span></button></div>
-      <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Find points by number or description and zoom to them; review a coordinate file</span></button></div>
+      <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Find points by number or description and zoom to them</span></button></div>
     </div>
   </div>
 
