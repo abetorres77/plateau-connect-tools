@@ -53,6 +53,9 @@
   .kpi b { display: block; font-size: 16px; }
   .kpi span { font-size: 11px; color: var(--soft); }
   [hidden] { display: none !important; }
+  .switch { display: flex; gap: 4px; margin-left: auto; }
+  .switch a { color: #fff; text-decoration: none; font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid rgba(255,255,255,.4); opacity: .85; }
+  .switch a.on { background: var(--orange); border-color: var(--orange); opacity: 1; font-weight: 600; }
   /* Connect's viewer side panel is ~300px wide: tighten everything so the tables fit. */
   @media (max-width: 420px) {
     main { padding: 6px; }
@@ -66,7 +69,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, conduit, ductbank, structure &amp; fitting takeoff</h1><span class="pill" style="margin-left:auto" id="ver">v2026.10.21e</span></header>
+<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, conduit, ductbank, structure &amp; fitting takeoff</h1><nav class="switch" id="switch"><a href="./qto.html" data-tool="qto">QTO</a><a href="./points.html" data-tool="points">Points</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.10.22</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -160,6 +163,14 @@ import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 const log = (...a) => console.log("[PlateauQTO]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
+
+// QTO / Points switcher: same panel, other page. Remembered so index.html opens the last-used tool in the viewer.
+const TOOL = "qto";
+try { localStorage.setItem("plateau:viewerTool", TOOL); } catch (e) { /* ignore */ }
+for (const a of document.querySelectorAll("#switch a")) {
+  if (a.dataset.tool === TOOL) a.classList.add("on");
+  a.addEventListener("click", (ev) => { ev.preventDefault(); try { localStorage.setItem("plateau:viewerTool", a.dataset.tool); } catch (e) { /* ignore */ } location.replace(a.getAttribute("href") + "?v=" + Date.now()); });
+}
 
 const UNIT_M = { usft: 1200 / 3937, ift: 0.3048, m: 1, mm: 0.001, in: 0.0254 };
 const UNIT_LABEL = { usft: "LF", ift: "LF", m: "m" };
