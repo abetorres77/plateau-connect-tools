@@ -111,7 +111,7 @@
 <script type="module">
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
-const VERSION = "v2026.10.22";
+const VERSION = "v2026.10.22b";
 const log = (...a) => console.log("[PEIProps]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -158,7 +158,7 @@ function shortName(key) {
   const j = s.lastIndexOf(":"); if (j >= 0) s = s.slice(j + 1);
   return s.trim().toLowerCase();
 }
-const SKIP_SET = /^3d visualization$|^transform$|^timeliner$/i;
+const SKIP_SET = /^3d visualization$|^transform$|^timeliner$|^revit material$/i;   // never read from, never shown
 function findProp(flat, re, setRe) {
   for (const [k, p] of flat) {
     if (SKIP_SET.test(p.set)) continue;
@@ -196,7 +196,9 @@ function fmtVal(p) {
 
 const F = {
   desc: [[/^description$/, /civil3d|^item$|^element$|^pset|^identity data$|properties/i], [/description|^desc\.?$|^comments$/]],
-  material: [[/^material$/, /part data|^civil3d$/i], [/^name$/, /^pipe segment$/i], [/^structural material$/], [/^material$|material name|^material:name$/], [/^name$/, /^revit material$/i]],
+  material: [[/^material$/, /part data|^civil3d$/i], [/^name$/, /^pipe segment$/i], [/^structural material$/], [/^material$|material name|^material:name$/]],
+  // unique identifier of the instance: Revit Mark / Tag / asset id, Civil 3D object name ("1A-ELEC-EMH-0280", "Structure - (12)")
+  unique: [[/^mark$/], [/^tag$|^tag number$/], [/^asset ?(id|tag|number)$/], [/^unique ?id$/], [/^instance ?name$/], [/^label$/], [/^name$/, /^civil3d$/i], [/^name$/, /^item$/i], [/^(structure|pipe|point) name$/]],
   size: [[/part size name/], [/^size$/], [/diameter\(trade size\)|nominal ?diameter/], [/inner diameter or width/], [/^diameter$|^inside diameter$|^outside diameter$/], [/^width$/]],
   name: [[/^name$/, /^item$|^element$/i], [/^name$/]],
   type: [[/internal type/], [/^category$/, /^element$/i], [/^type$|^family$/, /^element$/i], [/^object ?type$/]],
@@ -210,6 +212,8 @@ function interpret(modelId, o, modelName) {
   const pn = (o.product && o.product.name) || "";
   const pick = (list) => { const r = firstProp(flat, list); return r ? String(r.p.v).trim() : ""; };
   const name = pn || pick(F.name);
+  const uniq = pick(F.unique);
+  const label = uniq && uniq.toLowerCase() !== name.toLowerCase() ? name + " (" + uniq + ")" : (name || uniq);
   const desc = pick(F.desc) || ((o.product && o.product.description) || "");
   const sizeR = firstProp(flat, F.size);
   const size = sizeR ? (sizeR.p.t === 0 ? fix(Number(sizeR.p.v) / 25.4, 1).replace(/\.0$/, "") + "\x22" : String(sizeR.p.v).trim()) : "";
@@ -221,7 +225,7 @@ function interpret(modelId, o, modelName) {
     else if (COORD_RE.test(sn)) { const m = lengthM(p); coords.push({ name: p.name, m, raw: p.v }); }
   }
   return { key: modelId + ":" + o.id, modelId, id: o.id, modelName, cls: o.class || "", objType: (o.product && o.product.objectType) || "",
-    name, desc, material: pick(F.material), size, type: pick(F.type), network: pick(F.network), elevs, coords, props: flat, bbox: null, layer: null };
+    name, uniq, label, desc, material: pick(F.material), size, type: pick(F.type), network: pick(F.network), elevs, coords, props: flat, bbox: null, layer: null };
 }
 
 // ---------- connection & selection ----------
@@ -313,7 +317,7 @@ function render() {
   for (const it of items) {
     const tr = document.createElement("tr");
     tr.className = "sel" + (it.key === activeKey ? " active" : "");
-    tr.innerHTML = "<td><b>" + esc(it.name || it.cls) + "</b></td><td>" + esc(it.desc) + "</td><td>" + esc(it.material) + "</td><td>" + esc(it.size) + "</td><td class=num>" + fix(elevOf(it) == null ? null : toU(elevOf(it))) + "</td>";
+    tr.innerHTML = "<td><b>" + esc(it.label || it.cls) + "</b></td><td>" + esc(it.desc) + "</td><td>" + esc(it.material) + "</td><td>" + esc(it.size) + "</td><td class=num>" + fix(elevOf(it) == null ? null : toU(elevOf(it))) + "</td>";
     tr.addEventListener("click", () => { activeKey = it.key; for (const r of tb.querySelectorAll("tr")) r.classList.toggle("active", r === tr); showDetail(it); if ($("zoom-on-click").checked) API.viewer.setCamera({ modelObjectIds: [{ modelId: it.modelId, objectRuntimeIds: [it.id] }] }, { animationTime: 400 }).catch(() => {}); });
     tb.appendChild(tr);
   }
@@ -323,8 +327,8 @@ function render() {
 function showDetail(it) {
   const L = UNIT_LABEL[unit()];
   $("detail-card").hidden = false;
-  $("d-title").textContent = it.name || it.cls || "Object";
-  const key = [["Description", it.desc], ["Material", it.material], ["Size", it.size], ["Type", it.type || it.objType || it.cls], ["Network / system", it.network], ["Layer", "\u2026"], ["Model", it.modelName]];
+  $("d-title").textContent = it.label || it.cls || "Object";
+  const key = [["Identifier", it.uniq], ["Description", it.desc], ["Material", it.material], ["Size", it.size], ["Type", it.type || it.objType || it.cls], ["Network / system", it.network], ["Layer", "\u2026"], ["Model", it.modelName]];
   $("d-key").querySelector("tbody").innerHTML = key.filter(([, v]) => v).map(([k, v]) => "<tr><td>" + k + "</td><td" + (k === "Layer" ? " id=d-layer" : "") + ">" + esc(v) + "</td></tr>").join("");
   const geo = [];
   for (const e of it.elevs) geo.push([e.name, fix(toU(e.m)) + " " + L]);
@@ -338,7 +342,7 @@ function showDetail(it) {
   for (const c of it.coords) geo.push([c.name, c.m != null ? fix(toU(c.m)) + " " + L : String(c.raw)]);
   $("d-geo").querySelector("tbody").innerHTML = geo.length ? geo.map(([k, v]) => "<tr><td>" + esc(k) + "</td><td>" + esc(v) + "</td></tr>").join("") : "<tr><td colspan=2 class=muted>No elevation or coordinate data for this object.</td></tr>";
   const groups = new Map();
-  for (const [, p] of it.props) { if (HIDE_PROP.test(p.name.trim())) continue; if (!groups.has(p.set)) groups.set(p.set, []); groups.get(p.set).push(p); }
+  for (const [, p] of it.props) { if (HIDE_PROP.test(p.name.trim()) || SKIP_SET.test(p.set)) continue; if (!groups.has(p.set)) groups.set(p.set, []); groups.get(p.set).push(p); }
   let html = "";
   for (const [set, rows] of groups) html += "<h3>" + esc(set) + "</h3><table><tbody>" + rows.map(p => "<tr><td>" + esc(p.name) + "</td><td>" + esc(fmtVal(p)) + "</td></tr>").join("") + "</tbody></table>";
   $("props").innerHTML = html || "<p class=muted>No properties.</p>";
@@ -349,8 +353,8 @@ function showDetail(it) {
 
 function rows() {
   const L = UNIT_LABEL[unit()];
-  const head = ["Model", "Name", "Description", "Material", "Size", "Type", "Network", "Layer", "Elevation (" + L + ")", "Bottom (" + L + ")", "Top (" + L + ")", "Easting (" + L + ")", "Northing (" + L + ")", "Elevations found", "Class"];
-  const body = items.map(it => [it.modelName, it.name, it.desc, it.material, it.size, it.type || it.objType, it.network, it.layer || "",
+  const head = ["Model", "Name", "Identifier", "Description", "Material", "Size", "Type", "Network", "Layer", "Elevation (" + L + ")", "Bottom (" + L + ")", "Top (" + L + ")", "Easting (" + L + ")", "Northing (" + L + ")", "Elevations found", "Class"];
+  const body = items.map(it => [it.modelName, it.label, it.uniq, it.desc, it.material, it.size, it.type || it.objType, it.network, it.layer || "",
     fix(elevOf(it) == null ? null : toU(elevOf(it))), it.bbox ? fix(toU(it.bbox.min.z)) : "", it.bbox ? fix(toU(it.bbox.max.z)) : "", it.bbox ? fix(toU(it.bbox.c.x)) : "", it.bbox ? fix(toU(it.bbox.c.y)) : "",
     it.elevs.map(e => e.name + " " + fix(toU(e.m))).join("; "), it.cls]);
   return [head, ...body];
@@ -385,7 +389,7 @@ window.addEventListener("message", async (ev) => {
   try {
     if (d.peiCmd === "status") reply({ version: VERSION, items: items.length, active: activeKey });
     else if (d.peiCmd === "read") { await readSelection(await API.viewer.getSelection()); await Promise.all(items.map(layerOf)); reply({ rows: rows() }); }
-    else if (d.peiCmd === "detail") { const it = items.find(x => x.key === activeKey); reply(it ? { name: it.name, desc: it.desc, material: it.material, size: it.size, layer: it.layer, elevs: it.elevs, bbox: it.bbox, props: [...it.props.keys()] } : { error: "no active object" }); }
+    else if (d.peiCmd === "detail") { const it = items.find(x => x.key === activeKey); reply(it ? { name: it.name, label: it.label, uniq: it.uniq, desc: it.desc, material: it.material, size: it.size, layer: it.layer, elevs: it.elevs, bbox: it.bbox, props: [...it.props.keys()] } : { error: "no active object" }); }
     else reply({ error: "unknown command" });
   } catch (e) { reply({ error: String(e && e.message || e) }); }
 });
