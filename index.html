@@ -161,6 +161,24 @@
     </div>
   </div>
 
+  <div id="view-points">
+    <div class="card">
+      <h2>Point Search &mdash; find a point and zoom to it</h2>
+      <p class="muted">Type a point number, a range (<code>1005-1020</code>), a list (<code>1003,2003</code>) or a description (<code>MH</code>, <code>fire hydrant</code>) and click a result: the <strong>3D Viewer</strong> selects the point and zooms to it. Points come from the models loaded in the viewer (Civil 3D COGO points, survey points) or from a P,N,E,Z,D point file you load or paste, which is remembered per project.</p>
+      <p>Because it moves the viewer camera, the tool runs inside the 3D Viewer rather than on this page:</p>
+      <ol class="steps">
+        <li>Open the 3D Viewer and load the model(s) that contain the points (or just the site model if you will use a point file).</li>
+        <li>Click the <strong>Plateau Tools</strong> icon (black &amp; gold) at the bottom of the viewer's left toolbar and pick <strong>Points</strong> at the top of the panel.</li>
+        <li><strong>Scan models</strong>, or switch to <strong>Point file</strong> and load your CSV, then search.</li>
+      </ol>
+      <div class="row">
+        <button id="btn-open-viewer-points">Open the 3D Viewer</button>
+        <span class="muted">Opens this project's 3D Viewer with Point Search as the active tool.</span>
+      </div>
+      <div id="points-status" class="muted"></div>
+    </div>
+  </div>
+
   <div id="view-about" class="card">
     <h2>About</h2>
     <p>Plateau Excavation field tools for Trimble Connect. Coordinates are stored by Connect in millimeters; this tool converts using 1 usft = 1200/3937 m (divide mm by 304.800609601).</p>
@@ -184,7 +202,7 @@ const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
 
 function show(view) {
-  for (const v of ["connecting", "extractor", "convert", "qto", "about"]) {
+  for (const v of ["connecting", "extractor", "convert", "qto", "points", "about"]) {
     $("view-" + v).style.display = (v === view) ? "block" : "none";
   }
 }
@@ -205,6 +223,7 @@ async function init() {
       if (cmd === "about") show("about");
       else if (cmd === "convert") show("convert");
       else if (cmd === "qto") show("qto");
+      else if (cmd === "points") show("points");
       else show("extractor");
     } else if (event === "extension.accessToken") {
       const t = tokenFrom(args && args.data !== undefined ? args.data : args);
@@ -224,7 +243,12 @@ async function init() {
   }
   log("host:", host);
   // Cache-bust so a freshly deployed qto.html is picked up immediately (GitHub Pages sends max-age=600).
-  if (host === "3dviewer") { location.replace("./qto.html?v=" + Date.now()); return; }
+  if (host === "3dviewer") {
+    let tool = "qto";
+    try { tool = localStorage.getItem("plateau:viewerTool") === "points" ? "points" : "qto"; } catch (e) { /* ignore */ }
+    location.replace("./" + tool + ".html?v=" + Date.now());
+    return;
+  }
 
   const ICON = "https://abetorres77.github.io/plateau-connect-tools/icon.png";
   await API.ui.setMenu({
@@ -235,6 +259,7 @@ async function init() {
       { title: "Point Extractor", icon: ICON, command: "extract" },
       { title: "File Converter", icon: ICON, command: "convert" },
       { title: "QTO Takeoff", icon: ICON, command: "qto" },
+      { title: "Point Search", icon: ICON, command: "points" },
       { title: "About", icon: ICON, command: "about" }
     ]
   });
@@ -633,8 +658,8 @@ $("dropzone").addEventListener("drop", (e) => {
   convertFiles([...e.dataTransfer.files]);
 });
 
-$("btn-open-viewer").addEventListener("click", async () => {
-  const s = $("qto-status");
+async function openViewer(tool, s) {
+  try { localStorage.setItem("plateau:viewerTool", tool); } catch (e) { /* ignore */ }
   try {
     s.textContent = "Opening the 3D Viewer…";
     const ok = await API.extension.goTo("3dviewer");
@@ -643,7 +668,9 @@ $("btn-open-viewer").addEventListener("click", async () => {
     log("goTo failed", e);
     s.textContent = "Could not open the viewer from here. Use the 3D button in the Explorer toolbar, then open Plateau Tools from the viewer's left toolbar.";
   }
-});
+}
+$("btn-open-viewer").addEventListener("click", () => openViewer("qto", $("qto-status")));
+$("btn-open-viewer-points").addEventListener("click", () => openViewer("points", $("points-status")));
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
 $("btn-tflx").addEventListener("click", downloadTflx);
