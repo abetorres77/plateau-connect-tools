@@ -64,6 +64,8 @@
   .switch { display: flex; gap: 4px; }
   .switch a { color: var(--ink); text-decoration: none; font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
   .switch a.on { background: var(--orange); border-color: var(--orange); color: var(--ink); font-weight: 600; }
+  .switch a.close { font-weight: 700; padding: 2px 7px; }
+  .switch a.close:hover { background: var(--paper); }
   @media (max-width: 420px) {
     main { padding: 6px; }
     .card { padding: 8px; }
@@ -118,7 +120,7 @@
 <script type="module">
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
-const VERSION = "v2026.10.22f";
+const VERSION = "v2026.10.22g";
 const log = (...a) => console.log("[PEIPoints]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -129,22 +131,25 @@ $("switch").innerHTML = "";
 const back = document.createElement("a"); back.href = "./index.html"; back.textContent = "\u2630 Tools"; back.className = "on";
 back.addEventListener("click", (ev) => { ev.preventDefault(); try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ } location.replace("./index.html?v=" + Date.now()); });
 $("switch").appendChild(back);
+const closeA = document.createElement("a"); closeA.href = "#"; closeA.textContent = "✕"; closeA.title = "Close this tool and show the tools menu"; closeA.className = "close";
+closeA.addEventListener("click", (ev) => { ev.preventDefault(); window.plateauGoMenu(); });
+$("switch").appendChild(closeA);
 
-// Connect keeps this iframe alive (0 x 0) when the panel is closed from the rail icon; when it is shown again,
-// go back to the Plateau Tools menu so the icon always opens the list of tools.
+// Connect keeps this iframe alive when the panel is closed from the rail icon. While hidden the frame has no layout
+// (zero viewport or zero document box); when it comes back after being hidden, show the tools menu again.
 (function () {
   let hiddenSince = null;
-  function check() {
-    const hidden = window.innerWidth === 0 || window.innerHeight === 0;   // panel collapsed (not browser-tab switches)
+  function goMenu() { try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ } location.replace("./index.html?v=" + Date.now()); }
+  function poll() {
+    const r = document.documentElement.getBoundingClientRect();
+    const hidden = window.innerWidth === 0 || window.innerHeight === 0 || r.width === 0 || r.height === 0;
     if (hidden) { if (hiddenSince == null) hiddenSince = Date.now(); return; }
-    if (hiddenSince != null && Date.now() - hiddenSince > 700) {
-      try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ }
-      location.replace("./index.html?v=" + Date.now());
-    }
+    if (hiddenSince != null && Date.now() - hiddenSince > 400) goMenu();
     hiddenSince = null;
   }
-  window.addEventListener("resize", check);
-  setInterval(check, 500);
+  window.addEventListener("resize", poll);
+  setInterval(poll, 300);
+  window.plateauGoMenu = goMenu;
 })();
 
 const UNIT_M = { usft: 1200 / 3937, ift: 0.3048, m: 1 };
