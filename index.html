@@ -7,7 +7,7 @@
 <style>
   :root {
     --navy: #1b2a41;
-    --orange: #e87722;
+    --orange: #f2c244 /* Plateau yellow */;
     --paper: #f7f8fa;
     --ink: #22303c;
     --soft: #5c6b78;
@@ -39,7 +39,7 @@
   select { max-width: 260px; }
   button {
     font: inherit; font-weight: 600; padding: 8px 16px; border: none; border-radius: 6px;
-    background: var(--orange); color: #fff; cursor: pointer;
+    background: var(--orange); color: var(--navy); cursor: pointer;
   }
   button.secondary { background: var(--navy); }
   button:disabled { opacity: 0.5; cursor: default; }
@@ -60,7 +60,7 @@
     border: 2px dashed var(--line); border-radius: 8px; padding: 26px 16px; text-align: center;
     color: var(--soft); cursor: pointer; margin: 10px 0; transition: border-color .15s, background .15s;
   }
-  #dropzone.hover { border-color: var(--orange); background: #fff7f0; }
+  #dropzone.hover { border-color: var(--orange); background: #fffbe6; }
   #cv-log { font-size: 13px; margin-top: 10px; }
   #cv-log div { padding: 3px 0; border-bottom: 1px solid var(--line); }
   #cv-log .ok { color: var(--ok); }
@@ -201,9 +201,9 @@
     <div class="card">
       <h2>Plateau Tools</h2>
       <p class="muted">Pick a tool. Each tool has a <b>&#9776; Tools</b> link in its header to come back here.</p>
-      <div class="row"><button class="launch" data-tool="qto" style="width:100%;text-align:left">QTO Takeoff<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Pipe LF, structures, fittings, conduit and ductbank from the loaded models</span></button></div>
-      <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Find points by number or description and zoom to them</span></button></div>
-      <div class="row"><button class="launch" data-tool="props" style="width:100%;text-align:left">Object Properties<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Description, material, size, layer, elevations and coordinates of the selected objects</span></button></div>
+      <div class="row"><button class="launch" data-tool="qto" style="width:100%;text-align:left">QTO Takeoff<br><span class="muted" style="font-weight:400;color:var(--navy);opacity:.8">Pipe LF, structures, fittings, conduit and ductbank from the loaded models</span></button></div>
+      <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:var(--navy);opacity:.8">Find points by number or description and zoom to them</span></button></div>
+      <div class="row"><button class="launch" data-tool="props" style="width:100%;text-align:left">Object Properties<br><span class="muted" style="font-weight:400;color:var(--navy);opacity:.8">Description, material, size, layer, elevations and coordinates of the selected objects</span></button></div>
     </div>
   </div>
 
