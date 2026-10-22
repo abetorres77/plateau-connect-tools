@@ -7,6 +7,7 @@ Search the survey points of the models loaded in the 3D Viewer by **point number
 | `manifest-points.json` | Stand-alone fallback manifest (normally not needed — see *Part of Plateau Tools*). `extensionType: ["3dviewer"]`, `type: "panel"` — the tool opens as a tab in the viewer's left side panel. |
 | `points.html` | The extension page (version tag in the header). |
 | `pin.png` | Marker dropped in the viewer at the zoomed point. |
+| `props.html` | **Object Properties** (build v2026.10.22) — second viewer tool in this folder, see the section at the end. |
 | `icon.png` | PEI menu icon (Connect renders nothing without one). |
 | `trimbleconnect.workspace.api.js` | Trimble Workspace API v0.3.34, served from the same GitHub Pages repo (already published by the Plateau Tools deploy). |
 | `harness.html` | Local fake-host test page: 40 Civil 3D COGO points, 3 IFC control points, a Revit-style model with no points. |
@@ -47,3 +48,13 @@ Not yet seen on a real project — check on first use and fix the matchers if ne
 ## Diagnostic hook
 
 The hosting Connect page (parent window on `*.connect.trimble.com`, or `127.0.0.1` / `localhost` for the harness) can post `{peiCmd: "status" | "scan" | "search" | "zoom" | "loadCsv", q, text, label, from}` to the panel iframe and gets `{peiResult, …}` back — used to drive the tool from the browser console when the panel can't be clicked by automation.
+
+## Object Properties (`props.html`, build v2026.10.22)
+
+Third tool in the Plateau Tools viewer menu (project dropdown: *Object Properties*, right under Point Search). It follows the **viewer selection** (`viewer.onSelectionChanged`, plus *Read selection*): for every selected object it fetches the properties (`getObjectProperties`, 250 per call, up to 2,000 objects) and the bounding box (`getObjectBoundingBoxes`), then shows
+
+- **key fields** — Name (object name, else `Item`/`Element · Name`), Description (`Information:Description`, `Description`, `Comments`, product description), Material (`Part Data:Material`, `Pipe Segment · Name`, `Structural Material`, `Material`, `Revit Material · Name`; the Navisworks `3D Visualization` set is skipped), Size (`Part Size Name`, `Size`, `Diameter(Trade Size)` / `NominalDiameter`, `Inner Diameter or Width`, `Diameter`, `Width`; length-typed sizes shown in inches), Type (`Internal Type`, Revit `Category`/`Type`, object type), Network / system, Layer (same resolution as Point Search), Model;
+- **elevations & coordinates** — every property whose name contains *elevation / invert / rim / sump / flowline / top of / bottom of / height / level* (converted to the chosen unit), the bounding-box bottom and top elevation, center Easting (X) / Northing (Y) and X × Y extent, and every *northing / easting / X / Y / start / end / station / offset* property;
+- **all properties** grouped by set (dates formatted, `ID` hidden).
+
+A multi-selection lists the objects in a table (Name, Description, Material, Size, Elev); click a row for its detail (optional *Zoom on click*). **Copy for Excel** / **CSV** export one row per selected object with Model, Name, Description, Material, Size, Type, Network, Layer, Elevation, Bottom, Top, Easting, Northing, the elevation properties found and the class. Units: US survey feet (default, remembered per project), international feet or meters. Harness-tested on a Civil 3D pipe, a Revit pipe and a COGO point; the bounding-box units (assumed meters) and `getHierarchyParents` layer path are still to be confirmed on a real model. Diagnostic hook: `{peiCmd: "status" | "read" | "detail"}`.
