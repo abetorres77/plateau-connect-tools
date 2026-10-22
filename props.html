@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PEI Object Properties</title>
+<style>
+  :root {
+    --navy: #1b2a41; --orange: #e87722; --paper: #f7f8fa; --ink: #22303c;
+    --soft: #5c6b78; --line: #d9dfe5; --ok: #1e7d3c; --err: #b3261e; --warn: #9a6700;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Segoe UI", -apple-system, sans-serif; font-size: 13px; line-height: 1.45; }
+  header { background: var(--navy); color: #fff; padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; flex: 1; }
+  header .ver { font-size: 10px; opacity: .7; }
+  main { padding: 8px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+  .card h2 { font-size: 13px; margin: 0 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: end; margin: 6px 0; }
+  label { display: block; font-size: 11px; color: var(--soft); margin-bottom: 2px; }
+  label.inline { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink); margin: 0; }
+  select, input[type="text"], input[type="number"], input[type="search"], textarea { font: inherit; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); max-width: 100%; }
+  input[type="number"] { width: 90px; }
+  textarea { width: 100%; min-height: 70px; font-family: Consolas, monospace; font-size: 11px; }
+  button { font: inherit; font-weight: 600; padding: 6px 11px; border: none; border-radius: 6px; background: var(--orange); color: #fff; cursor: pointer; }
+  button.secondary { background: var(--navy); }
+  button.ghost { background: transparent; color: var(--navy); border: 1px solid var(--line); font-weight: 500; }
+  button.small { padding: 3px 8px; font-size: 11px; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { font-size: 12px; color: var(--soft); min-height: 1.2em; margin-top: 4px; }
+  #status.ok { color: var(--ok); } #status.err { color: var(--err); } #status.warn { color: var(--warn); }
+  .muted { color: var(--soft); font-size: 12px; }
+  .models { display: flex; flex-direction: column; gap: 3px; max-height: 120px; overflow-y: auto; margin: 6px 0; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .tabs button { background: transparent; color: var(--soft); border-radius: 6px 6px 0 0; padding: 6px 10px; font-weight: 600; }
+  .tabs button.active { color: var(--navy); border-bottom: 2px solid var(--orange); }
+  .search { display: flex; gap: 6px; align-items: center; }
+  .search input { flex: 1; min-width: 0; font-size: 14px; padding: 7px 9px; }
+  .table-scroll { overflow: auto; max-height: 48vh; margin-top: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--soft); position: sticky; top: 0; background: #fff; }
+  td.num, th.num { text-align: right; }
+  tr.sel { cursor: pointer; } tr.sel:hover td { background: #fff7f0; } tr.active td { background: #fdebdc; }
+  .pill { display: inline-block; padding: 0 6px; border-radius: 10px; font-size: 10px; background: #eef1f4; color: var(--soft); }
+  .pill.pt { background: #e4f1e8; color: var(--ok); }
+  details summary { cursor: pointer; color: var(--navy); font-weight: 600; font-size: 12px; }
+  details { margin-top: 6px; }
+  .kv { font-size: 11px; color: var(--soft); margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+  #props { margin-top: 6px; }
+  #props h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--soft); margin: 8px 0 2px; }
+  #props table { font-size: 11px; }
+  #props td { white-space: normal; word-break: break-word; vertical-align: top; }
+  #props td:first-child { color: var(--soft); width: 45%; }
+  #d-key td:first-child, #d-geo td:first-child { color: var(--soft); width: 45%; }
+  #d-key td, #d-geo td { white-space: normal; word-break: break-word; vertical-align: top; font-size: 12px; }
+  #d-key, #d-geo { margin-bottom: 6px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .grid3 input { width: 100%; }
+  [hidden] { display: none !important; }
+  .switch { display: flex; gap: 4px; }
+  .switch a { color: #fff; text-decoration: none; font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid rgba(255,255,255,.4); opacity: .85; }
+  .switch a.on { background: var(--orange); border-color: var(--orange); opacity: 1; font-weight: 600; }
+  @media (max-width: 420px) {
+    main { padding: 6px; }
+    .card { padding: 8px; }
+    th, td { padding: 2px 4px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+<header><div class="dot"></div><h1>Object Properties</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a></nav><span class="ver" id="ver"></span></header>
+<main>
+  <div id="view-connecting" class="card">Connecting to Trimble Connect…</div>
+
+  <div id="app" hidden>
+    <div class="card">
+      <div class="row">
+        <div><label>Units</label>
+          <select id="units">
+            <option value="usft">US survey feet</option>
+            <option value="ift">International feet</option>
+            <option value="m">Meters</option>
+          </select></div>
+        <button class="small secondary" id="refresh">Read selection</button>
+        <button class="small ghost" id="copy">Copy for Excel</button>
+        <button class="small ghost" id="csv">CSV</button>
+        <label class="inline"><input type="checkbox" id="zoom-on-click"> Zoom on click</label>
+      </div>
+      <p class="muted" id="sel-info">Select one or more objects in the 3D Viewer. Their key properties appear here; click a row for the full list.</p>
+    </div>
+
+    <div class="card" id="list-card" hidden>
+      <div class="muted" id="count"></div>
+      <div class="table-scroll"><table id="results"><thead><tr><th>Name</th><th>Description</th><th>Material</th><th>Size</th><th class="num">Elev</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="card" id="detail-card" hidden>
+      <h2 id="d-title"></h2>
+      <table id="d-key"><tbody></tbody></table>
+      <details open><summary>Elevations &amp; coordinates</summary><table id="d-geo"><tbody></tbody></table></details>
+      <details><summary>All properties</summary><div id="props"></div></details>
+    </div>
+
+    <div id="status"></div>
+  </div>
+</main>
+
+<script type="module">
+import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
+
+const VERSION = "v2026.10.22";
+const log = (...a) => console.log("[PEIProps]", ...a);
+const $ = (id) => document.getElementById(id);
+const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
+$("ver").textContent = VERSION;
+$("switch").querySelector("a").addEventListener("click", (ev) => { ev.preventDefault(); try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ } location.replace("./index.html?v=" + Date.now()); });
+
+const UNIT_M = { usft: 1200 / 3937, ift: 0.3048, m: 1 };
+const UNIT_LABEL = { usft: "ft", ift: "ft", m: "m" };
+const MM_PER_M = 1000;
+const CHUNK = 250;
+const MAX_OBJECTS = 2000;
+const HIDE_PROP = /^id$/i;
+
+let API = null;
+let projectId = "noproject";
+let models = [];
+let items = [];          // one per selected object
+let activeKey = null;
+let selSeq = 0;
+
+// ---------- helpers ----------
+
+const unit = () => $("units").value;
+const toU = (m) => m / UNIT_M[unit()];
+const fix = (v, d = 2) => (v == null || isNaN(v)) ? "" : Number(v).toFixed(d);
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\x22/g, "&quot;");
+const mmGuard = (c) => (Math.max(Math.abs(c.x), Math.abs(c.y), Math.abs(c.z)) > 5e7) ? { x: c.x / 1000, y: c.y / 1000, z: c.z / 1000 } : c;
+
+function flatten(op) {
+  const flat = new Map();
+  for (const ps of (op.properties || [])) {
+    const setName = ps.name || "Properties";
+    for (const p of (ps.properties || [])) {
+      if (!p || p.name == null) continue;
+      if (p.value === null || p.value === undefined || p.value === "") continue;
+      const key = setName + " · " + p.name;
+      if (!flat.has(key)) flat.set(key, { v: p.value, t: p.type, set: setName, name: p.name });
+    }
+  }
+  return flat;
+}
+function shortName(key) {
+  let s = key; const i = s.indexOf(" · "); if (i >= 0) s = s.slice(i + 3);
+  const j = s.lastIndexOf(":"); if (j >= 0) s = s.slice(j + 1);
+  return s.trim().toLowerCase();
+}
+const SKIP_SET = /^3d visualization$|^transform$|^timeliner$/i;
+function findProp(flat, re, setRe) {
+  for (const [k, p] of flat) {
+    if (SKIP_SET.test(p.set)) continue;
+    if (setRe && !setRe.test(p.set)) continue;
+    if (!re.test(shortName(k))) continue;
+    return { k, p };
+  }
+  return null;
+}
+function firstProp(flat, list) { for (const [re, setRe] of list) { const r = findProp(flat, re, setRe); if (r) return r; } return null; }
+function lengthM(p) {
+  if (!p) return null;
+  if (p.t === 0) return Number(p.v) / MM_PER_M;
+  const n = parseFloat(String(p.v).replace(/[^\d.+-]/g, ""));
+  return isNaN(n) ? null : n * UNIT_M.usft;        // bare number / "925.10'" string: assume US survey feet
+}
+function fmtDate(v) {
+  let d = null; const n = Number(v);
+  if (isFinite(n) && n > 0) d = new Date(n > 1e11 ? n : n * 1000);
+  else if (typeof v === "string") { const t = Date.parse(v); if (!isNaN(t)) d = new Date(t); }
+  if (!d || isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) + " " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+function fmtVal(p) {
+  const u = UNIT_M[unit()], L = UNIT_LABEL[unit()];
+  if (p.t === 0) return fix(Number(p.v) / MM_PER_M / u) + " " + L;
+  if (p.t === 1) return fix(Number(p.v) / (u * u)) + " s" + L;
+  if (p.t === 2) return unit() === "m" ? fix(Number(p.v)) + " m³" : fix(Number(p.v) / Math.pow(UNIT_M.usft, 3) / 27) + " CY";
+  if (p.t === 8) return fmtDate(p.v);
+  if (typeof p.v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(p.v)) return fmtDate(p.v);
+  return String(p.v);
+}
+
+// ---------- key fields ----------
+
+const F = {
+  desc: [[/^description$/, /civil3d|^item$|^element$|^pset|^identity data$|properties/i], [/description|^desc\.?$|^comments$/]],
+  material: [[/^material$/, /part data|^civil3d$/i], [/^name$/, /^pipe segment$/i], [/^structural material$/], [/^material$|material name|^material:name$/], [/^name$/, /^revit material$/i]],
+  size: [[/part size name/], [/^size$/], [/diameter\(trade size\)|nominal ?diameter/], [/inner diameter or width/], [/^diameter$|^inside diameter$|^outside diameter$/], [/^width$/]],
+  name: [[/^name$/, /^item$|^element$/i], [/^name$/]],
+  type: [[/internal type/], [/^category$/, /^element$/i], [/^type$|^family$/, /^element$/i], [/^object ?type$/]],
+  network: [[/network name/], [/^name$/, /^system type$/i], [/system name/]]
+};
+const ELEV_RE = /elev|invert|^rim|sump|flow ?line|^fl$|^z$|top of|bottom of|^height$|^level$/;
+const COORD_RE = /northing|easting|^x$|^y$|^n$|^e$|start ?(x|y|n|e)|end ?(x|y|n|e)|station|offset|^latitude$|^longitude$/;
+
+function interpret(modelId, o, modelName) {
+  const flat = flatten(o);
+  const pn = (o.product && o.product.name) || "";
+  const pick = (list) => { const r = firstProp(flat, list); return r ? String(r.p.v).trim() : ""; };
+  const name = pn || pick(F.name);
+  const desc = pick(F.desc) || ((o.product && o.product.description) || "");
+  const sizeR = firstProp(flat, F.size);
+  const size = sizeR ? (sizeR.p.t === 0 ? fix(Number(sizeR.p.v) / 25.4, 1).replace(/\.0$/, "") + "\x22" : String(sizeR.p.v).trim()) : "";
+  const elevs = [], coords = [];
+  for (const [k, p] of flat) {
+    if (SKIP_SET.test(p.set)) continue;
+    const sn = shortName(k);
+    if (ELEV_RE.test(sn)) { const m = lengthM(p); if (m != null) elevs.push({ name: p.name, m }); }
+    else if (COORD_RE.test(sn)) { const m = lengthM(p); coords.push({ name: p.name, m, raw: p.v }); }
+  }
+  return { key: modelId + ":" + o.id, modelId, id: o.id, modelName, cls: o.class || "", objType: (o.product && o.product.objectType) || "",
+    name, desc, material: pick(F.material), size, type: pick(F.type), network: pick(F.network), elevs, coords, props: flat, bbox: null, layer: null };
+}
+
+// ---------- connection & selection ----------
+
+async function init() {
+  API = await WorkspaceAPI.connect(window.parent, (event, args) => {
+    if (event === "viewer.onSelectionChanged") readSelection(args && args.data).catch(err => { log("selection", err); setStatus("Could not read the selection: " + (err && err.message || err), "err"); });
+    else if (event === "viewer.onModelStateChanged" || event === "viewer.onModelReset") loadModels().catch(() => {});
+  }, 180000);
+  if (!API.viewer) {
+    $("view-connecting").innerHTML = "<h2>Open this tool inside the 3D Viewer</h2><p class='muted'>Object Properties reads what is selected in the 3D Viewer, so it only works there: open a model, click Plateau Tools in the viewer's left toolbar and pick Object Properties.</p>";
+    return;
+  }
+  try { const p = await API.project.getCurrentProject(); if (p && p.id) projectId = p.id; } catch (e) { /* ignore */ }
+  try { const u = localStorage.getItem("peiProps:units:" + projectId); if (u && UNIT_M[u]) $("units").value = u; } catch (e) { /* ignore */ }
+  $("view-connecting").hidden = true;
+  $("app").hidden = false;
+  await loadModels();
+  try { await readSelection(await API.viewer.getSelection()); } catch (e) { log("initial selection", e); }
+}
+async function loadModels() { try { models = (await API.viewer.getModels("loaded")) || []; } catch (e) { models = []; } }
+const modelName = (id) => { const m = models.find(x => x.id === id || x.versionId === id); return m ? m.name : ""; };
+
+async function readSelection(sel) {
+  const seq = ++selSeq;
+  const groups = (sel || []).filter(s => s && (s.objectRuntimeIds || []).length);
+  const total = groups.reduce((n, s) => n + s.objectRuntimeIds.length, 0);
+  if (!total) { items = []; activeKey = null; render(); $("sel-info").textContent = "Nothing selected. Select one or more objects in the 3D Viewer."; return; }
+  $("sel-info").textContent = "Reading " + total + " selected object(s)…";
+  const next = [];
+  for (const s of groups) {
+    const ids = s.objectRuntimeIds.slice(0, MAX_OBJECTS);
+    const mName = modelName(s.modelId);
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      let props = [];
+      try { props = (await API.viewer.getObjectProperties(s.modelId, chunk)) || []; } catch (e) { log("getObjectProperties", e); }
+      if (seq !== selSeq) return;                     // a newer selection arrived
+      let boxes = [];
+      try { boxes = (await API.viewer.getObjectBoundingBoxes(s.modelId, chunk)) || []; } catch (e) { log("getObjectBoundingBoxes", e); }
+      const boxById = new Map(boxes.map(b => [b.id, b.boundingBox]));
+      for (const o of props) {
+        const it = interpret(s.modelId, o, mName);
+        const b = boxById.get(o.id);
+        if (b && b.min && b.max) it.bbox = { min: mmGuard(b.min), max: mmGuard(b.max), c: mmGuard({ x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2, z: (b.min.z + b.max.z) / 2 }) };
+        next.push(it);
+      }
+    }
+  }
+  if (seq !== selSeq) return;
+  items = next;
+  if (!items.find(x => x.key === activeKey)) activeKey = items.length ? items[0].key : null;
+  $("sel-info").textContent = items.length + " object(s) selected" + (total > items.length ? " (" + total + " in the viewer; showing the first " + items.length + ")" : "") + ".";
+  render();
+  if (items.length === 1) showDetail(items[0]);
+}
+
+// Layer: a Layer property when the export has one, else the hierarchy ancestor whose name is one of the model's layers.
+const layerCache = new Map();
+async function layerNames(modelId) {
+  if (!layerCache.has(modelId)) {
+    let names = new Set();
+    try { names = new Set(((await API.viewer.getLayers(modelId)) || []).map(l => l && l.name).filter(Boolean)); } catch (err) { /* none */ }
+    layerCache.set(modelId, names);
+  }
+  return layerCache.get(modelId);
+}
+async function layerOf(it) {
+  if (it.layer != null) return it.layer;
+  const lp = findProp(it.props, /^layer(\s*name)?$/);
+  if (lp) { it.layer = String(lp.p.v); return it.layer; }
+  let parents = [];
+  try { parents = (await API.viewer.getHierarchyParents(it.modelId, [it.id], undefined, true)) || []; } catch (err) { log("getHierarchyParents", err); }
+  const names = parents.map(p => p && p.name).filter(Boolean);
+  const layers = await layerNames(it.modelId);
+  it.layer = names.find(n => layers.has(n)) || (names.length ? names[0] + "  (parent)" : "");
+  return it.layer;
+}
+
+// ---------- rendering ----------
+
+const elevOf = (it) => it.bbox ? it.bbox.c.z : (it.elevs.length ? it.elevs[0].m : null);
+
+function render() {
+  const tb = $("results").querySelector("tbody");
+  tb.innerHTML = "";
+  $("list-card").hidden = items.length < 2;
+  if (!items.length) { $("detail-card").hidden = true; return; }
+  for (const it of items) {
+    const tr = document.createElement("tr");
+    tr.className = "sel" + (it.key === activeKey ? " active" : "");
+    tr.innerHTML = "<td><b>" + esc(it.name || it.cls) + "</b></td><td>" + esc(it.desc) + "</td><td>" + esc(it.material) + "</td><td>" + esc(it.size) + "</td><td class=num>" + fix(elevOf(it) == null ? null : toU(elevOf(it))) + "</td>";
+    tr.addEventListener("click", () => { activeKey = it.key; for (const r of tb.querySelectorAll("tr")) r.classList.toggle("active", r === tr); showDetail(it); if ($("zoom-on-click").checked) API.viewer.setCamera({ modelObjectIds: [{ modelId: it.modelId, objectRuntimeIds: [it.id] }] }, { animationTime: 400 }).catch(() => {}); });
+    tb.appendChild(tr);
+  }
+  $("count").textContent = items.length + " objects";
+}
+
+function showDetail(it) {
+  const L = UNIT_LABEL[unit()];
+  $("detail-card").hidden = false;
+  $("d-title").textContent = it.name || it.cls || "Object";
+  const key = [["Description", it.desc], ["Material", it.material], ["Size", it.size], ["Type", it.type || it.objType || it.cls], ["Network / system", it.network], ["Layer", "\u2026"], ["Model", it.modelName]];
+  $("d-key").querySelector("tbody").innerHTML = key.filter(([, v]) => v).map(([k, v]) => "<tr><td>" + k + "</td><td" + (k === "Layer" ? " id=d-layer" : "") + ">" + esc(v) + "</td></tr>").join("");
+  const geo = [];
+  for (const e of it.elevs) geo.push([e.name, fix(toU(e.m)) + " " + L]);
+  if (it.bbox) {
+    geo.push(["Bottom elevation (model)", fix(toU(it.bbox.min.z)) + " " + L]);
+    geo.push(["Top elevation (model)", fix(toU(it.bbox.max.z)) + " " + L]);
+    geo.push(["Center Easting (X)", fix(toU(it.bbox.c.x)) + " " + L]);
+    geo.push(["Center Northing (Y)", fix(toU(it.bbox.c.y)) + " " + L]);
+    geo.push(["Extent X × Y", fix(toU(it.bbox.max.x - it.bbox.min.x)) + " × " + fix(toU(it.bbox.max.y - it.bbox.min.y)) + " " + L]);
+  }
+  for (const c of it.coords) geo.push([c.name, c.m != null ? fix(toU(c.m)) + " " + L : String(c.raw)]);
+  $("d-geo").querySelector("tbody").innerHTML = geo.length ? geo.map(([k, v]) => "<tr><td>" + esc(k) + "</td><td>" + esc(v) + "</td></tr>").join("") : "<tr><td colspan=2 class=muted>No elevation or coordinate data for this object.</td></tr>";
+  const groups = new Map();
+  for (const [, p] of it.props) { if (HIDE_PROP.test(p.name.trim())) continue; if (!groups.has(p.set)) groups.set(p.set, []); groups.get(p.set).push(p); }
+  let html = "";
+  for (const [set, rows] of groups) html += "<h3>" + esc(set) + "</h3><table><tbody>" + rows.map(p => "<tr><td>" + esc(p.name) + "</td><td>" + esc(fmtVal(p)) + "</td></tr>").join("") + "</tbody></table>";
+  $("props").innerHTML = html || "<p class=muted>No properties.</p>";
+  layerOf(it).then(l => { if (activeKey === it.key) { const td = $("d-layer"); if (td) td.textContent = l || "(none)"; } });
+}
+
+// ---------- export ----------
+
+function rows() {
+  const L = UNIT_LABEL[unit()];
+  const head = ["Model", "Name", "Description", "Material", "Size", "Type", "Network", "Layer", "Elevation (" + L + ")", "Bottom (" + L + ")", "Top (" + L + ")", "Easting (" + L + ")", "Northing (" + L + ")", "Elevations found", "Class"];
+  const body = items.map(it => [it.modelName, it.name, it.desc, it.material, it.size, it.type || it.objType, it.network, it.layer || "",
+    fix(elevOf(it) == null ? null : toU(elevOf(it))), it.bbox ? fix(toU(it.bbox.min.z)) : "", it.bbox ? fix(toU(it.bbox.max.z)) : "", it.bbox ? fix(toU(it.bbox.c.x)) : "", it.bbox ? fix(toU(it.bbox.c.y)) : "",
+    it.elevs.map(e => e.name + " " + fix(toU(e.m))).join("; "), it.cls]);
+  return [head, ...body];
+}
+const csvCell = (v) => { const s = v == null ? "" : String(v); return /[\x22,\r\n]/.test(s) ? "\x22" + s.replace(/\x22/g, "\x22\x22") + "\x22" : s; };
+async function copyExcel() {
+  if (!items.length) { setStatus("Nothing selected.", "err"); return; }
+  await Promise.all(items.map(layerOf));
+  try { await navigator.clipboard.writeText(rows().map(r => r.join("\t")).join("\n")); setStatus(items.length + " row(s) copied — paste into Excel.", "ok"); }
+  catch (e) { setStatus("Clipboard blocked by the browser; use CSV instead.", "err"); }
+}
+async function downloadCsv() {
+  if (!items.length) { setStatus("Nothing selected.", "err"); return; }
+  await Promise.all(items.map(layerOf));
+  const blob = new Blob([rows().map(r => r.map(csvCell).join(",")).join("\r\n")], { type: "text/csv" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "Connect_Object_Properties.csv"; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ---------- wiring ----------
+
+$("units").addEventListener("change", () => { try { localStorage.setItem("peiProps:units:" + projectId, unit()); } catch (e) { /* ignore */ } render(); const it = items.find(x => x.key === activeKey); if (it) showDetail(it); });
+$("refresh").addEventListener("click", async () => { try { await readSelection(await API.viewer.getSelection()); } catch (e) { setStatus("Could not read the selection: " + (e && e.message || e), "err"); } });
+$("copy").addEventListener("click", () => copyExcel());
+$("csv").addEventListener("click", () => downloadCsv());
+
+// Diagnostic hook for the hosting Connect page (browser automation cannot click into this cross-origin iframe).
+window.addEventListener("message", async (ev) => {
+  const d = ev.data;
+  if (!d || !d.peiCmd || ev.source !== window.parent) return;
+  if (!/(^|\.)connect\.trimble\.com$|^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(ev.origin)) return;
+  const reply = (r) => { try { ev.source.postMessage(Object.assign({ peiResult: d.peiCmd, from: d.from }, r), ev.origin); } catch (e) { /* ignore */ } };
+  try {
+    if (d.peiCmd === "status") reply({ version: VERSION, items: items.length, active: activeKey });
+    else if (d.peiCmd === "read") { await readSelection(await API.viewer.getSelection()); await Promise.all(items.map(layerOf)); reply({ rows: rows() }); }
+    else if (d.peiCmd === "detail") { const it = items.find(x => x.key === activeKey); reply(it ? { name: it.name, desc: it.desc, material: it.material, size: it.size, layer: it.layer, elevs: it.elevs, bbox: it.bbox, props: [...it.props.keys()] } : { error: "no active object" }); }
+    else reply({ error: "unknown command" });
+  } catch (e) { reply({ error: String(e && e.message || e) }); }
+});
+
+init().catch(e => { log(e); $("view-connecting").textContent = "Could not connect to Trimble Connect: " + (e && e.message || e); });
+</script>
+</body>
+</html>
