@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plateau QTO</title>
+<title>PEI QTO</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -75,7 +75,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>Plateau QTO &mdash; pipe, conduit, ductbank, structure &amp; fitting takeoff</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.10.22d</span></header>
+<header><span class="dot"></span><h1>PEI QTO</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.10.22e</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -370,12 +370,24 @@ async function readObjects() {
   let targets = [];   // [{modelId, runtimeIds}]
   if (scope === "selected") {
     const sel = await API.viewer.getSelection();
+    const checked = [...byModel.values()];
+    let expanded = 0;
     for (const s of (sel || [])) {
-      if (!byModel.has(s.modelId) || !(s.objectRuntimeIds || []).length) continue;
-      targets.push({ modelId: s.modelId, runtimeIds: s.objectRuntimeIds });
+      if (!(s.objectRuntimeIds || []).length) continue;
+      // the selection may name the model by its id or by its file versionId
+      const m = checked.find(x => x.id === s.modelId || x.versionId === s.modelId) || (checked.length === 1 ? checked[0] : null);
+      if (!m) continue;
+      byModel.set(s.modelId, m);
+      // The viewer selects geometry leaves (Revit "Solid" nodes carry no data) or group nodes (a layer, a category):
+      // take the selected ids plus their hierarchy parents and children so the element nodes are included.
+      const ids = new Set(s.objectRuntimeIds);
+      try { for (const h of ((await API.viewer.getHierarchyParents(s.modelId, s.objectRuntimeIds, undefined, true)) || [])) if (h && h.id != null) ids.add(h.id); } catch (e) { log("getHierarchyParents", e); }
+      try { for (const h of ((await API.viewer.getHierarchyChildren(s.modelId, s.objectRuntimeIds, undefined, true)) || [])) { if (h && h.id != null) ids.add(h.id); if (ids.size > 20000) break; } } catch (e) { log("getHierarchyChildren", e); }
+      expanded += ids.size - s.objectRuntimeIds.length;
+      targets.push({ modelId: s.modelId, runtimeIds: [...ids] });
     }
     if (!targets.length) throw new Error("Nothing selected in the viewer (in the checked models). Select objects or switch Scope to Everything.");
-    lastScopeLabel = "viewer selection";
+    lastScopeLabel = "viewer selection" + (expanded > 0 ? " (+" + expanded + " related nodes)" : "");
   } else {
     const diag = [];
     for (const m of byModel.values()) {
