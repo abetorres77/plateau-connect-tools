@@ -114,7 +114,7 @@
 <script type="module">
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
-const VERSION = "v2026.10.22d";
+const VERSION = "v2026.10.22e";
 const log = (...a) => console.log("[PEIPoints]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -443,15 +443,29 @@ const fmtVal = (p) => {
   if (p.t === 0) return (Number(p.v) / MM_PER_M / UNIT_M.usft).toFixed(2) + " ft";
   if (p.t === 1) return (Number(p.v) / (UNIT_M.usft * UNIT_M.usft)).toFixed(2) + " sf";
   if (p.t === 2) return (Number(p.v) / Math.pow(UNIT_M.usft, 3) / 27).toFixed(2) + " CY";
+  if (p.t === 8) return fmtDate(p.v);
+  if (typeof p.v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(p.v)) return fmtDate(p.v);
   return String(p.v);
 };
+// DateTime properties arrive as a UNIX timestamp (seconds, sometimes milliseconds) or an ISO string.
+function fmtDate(v) {
+  let d = null;
+  const n = Number(v);
+  if (isFinite(n) && n > 0) d = new Date(n > 1e11 ? n : n * 1000);
+  else if (typeof v === "string") { const t = Date.parse(v); if (!isNaN(t)) d = new Date(t); }
+  if (!d || isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) + " " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+const HIDE_PROP = /^id$/i;
 function showProps(e) {
   const box = $("props");
   const groups = new Map();
   for (const [k, p] of e.props) { const i = k.indexOf(" · "); const set = i < 0 ? "Properties" : k.slice(0, i), name = i < 0 ? k : k.slice(i + 3);
+    if (HIDE_PROP.test(name.trim())) continue;
     if (!groups.has(set)) groups.set(set, []); groups.get(set).push([name, p]); }
   let html = "<h3>Point " + esc(e.num || e.name || "") + (e.desc ? " \u2014 " + esc(e.desc) : "") + "</h3><table><tbody>" +
     "<tr><td>Class</td><td>" + esc(e.cls || "") + "</td></tr><tr><td>Name</td><td>" + esc(e.name || "") + "</td></tr>" +
+    "<tr><td>Layer</td><td id=prop-layer>\u2026</td></tr>" +
     (e.how ? "<tr><td>Number from</td><td>" + esc(e.how) + "</td></tr>" : "") + "</tbody></table>";
   for (const [set, rows] of groups) {
     html += "<h3>" + esc(set) + "</h3><table><tbody>" + rows.map(([name, p]) => "<tr><td>" + esc(name) + "</td><td>" + esc(fmtVal(p)) + "</td></tr>").join("") + "</tbody></table>";
@@ -459,6 +473,37 @@ function showProps(e) {
   if (!groups.size) html += "<p class=muted>This object has no properties.</p>";
   box.innerHTML = html;
   box.hidden = false;
+  fillLayer(e).catch(err => { log("layer", err); const td = $("prop-layer"); if (td) td.textContent = "(unknown)"; });
+}
+
+// Layer: a "Layer" property when the export has one, else the hierarchy parent whose name is one of the model's
+// layers (Navisworks / DWG models group objects under their layer in the model tree), else the direct parent.
+const layerCache = new Map();
+async function layerNames(modelId) {
+  if (!layerCache.has(modelId)) {
+    let names = new Set();
+    try { names = new Set(((await API.viewer.getLayers(modelId)) || []).map(l => l && l.name).filter(Boolean)); } catch (err) { /* no layers */ }
+    layerCache.set(modelId, names);
+  }
+  return layerCache.get(modelId);
+}
+async function fillLayer(e) {
+  const key = e.key;
+  let text = "";
+  const lp = findProp(e.props, /^layer(\s*name)?$/, false);
+  if (lp) text = String(lp.p.v);
+  else {
+    let parents = [];
+    try { parents = (await API.viewer.getHierarchyParents(e.modelId, [e.id], undefined, true)) || []; } catch (err) { log("getHierarchyParents", err); }
+    const names = parents.map(p => p && p.name).filter(Boolean);
+    const layers = await layerNames(e.modelId);
+    const hit = names.find(n => layers.has(n));
+    text = hit || (names.length ? names[0] + "  (parent)" : "(none)");
+    e.path = names;
+  }
+  e.layer = text;
+  if (activeKey !== key) return;
+  const td = $("prop-layer"); if (td) td.textContent = text;
 }
 let selTimer = null;
 async function onSelection(sel) {
