@@ -4,44 +4,41 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plateau Tools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --navy: #1b2a41;
-    --orange: #f2c244 /* Plateau yellow */;
-    --paper: #f7f8fa;
-    --ink: #22303c;
-    --soft: #5c6b78;
-    --line: #d9dfe5;
-    --ok: #1e7d3c;
-    --err: #b3261e;
+    --navy: #252a2e; --blue: #0063a3; --blue-dark: #004f83; --orange: #f2c244; /* Plateau yellow accent */
+    --paper: #f1f1f6; --ink: #252a2e; --soft: #6a6e79; --line: #cbcdd6; --ok: #1e8a44; --err: #da212c; --warn: #9a6700;
   }
   * { box-sizing: border-box; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--orange); outline-offset: 1px; border-color: var(--orange); }
+  button:hover:not(:disabled) { filter: brightness(.93); }
+  button.secondary:hover:not(:disabled), button.ghost:hover:not(:disabled) { background: var(--paper); filter: none; }
   body {
     margin: 0; background: var(--paper); color: var(--ink);
-    font-family: "Segoe UI", -apple-system, sans-serif; font-size: 14px; line-height: 1.5;
+    font-family: "Open Sans", "Segoe UI", -apple-system, sans-serif; font-size: 14px; line-height: 1.5;
   }
-  header {
-    background: var(--navy); color: #fff; padding: 10px 16px;
+  header { background: #fff; color: var(--ink); border-bottom: 1px solid var(--line); padding: 10px 16px;
     display: flex; align-items: center; gap: 10px;
   }
   header .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--orange); }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
   main { max-width: 860px; margin: 0 auto; padding: 16px; }
-  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 16px; margin-bottom: 14px; }
   .card h2 { font-size: 14px; margin: 0 0 8px; }
   .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 10px 0; }
   label { display: block; font-size: 12px; color: var(--soft); margin-bottom: 3px; }
   select, input[type="number"], input[type="text"] {
-    font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink);
+    font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink);
   }
   input[type="number"] { width: 90px; }
   input[type="text"] { width: 220px; }
   select { max-width: 260px; }
   button {
-    font: inherit; font-weight: 600; padding: 8px 16px; border: none; border-radius: 6px;
-    background: var(--orange); color: var(--navy); cursor: pointer;
+    font: inherit; font-weight: 600; padding: 8px 16px; border: none; border-radius: 4px;
+    background: var(--blue); color: #fff; cursor: pointer;
   }
-  button.secondary { background: var(--navy); }
+  button.secondary { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
   button:disabled { opacity: 0.5; cursor: default; }
   #status { font-size: 13px; color: var(--soft); min-height: 1.2em; margin-top: 8px; }
   #status.ok { color: var(--ok); }
@@ -57,7 +54,7 @@
   .steps { margin: 8px 0 0 18px; padding: 0; } .steps li { margin: 4px 0; }
   #download-bar { display: none; align-items: end; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
   #dropzone {
-    border: 2px dashed var(--line); border-radius: 8px; padding: 26px 16px; text-align: center;
+    border: 2px dashed var(--line); border-radius: 4px; padding: 26px 16px; text-align: center;
     color: var(--soft); cursor: pointer; margin: 10px 0; transition: border-color .15s, background .15s;
   }
   #dropzone.hover { border-color: var(--orange); background: #fffbe6; }
@@ -201,9 +198,9 @@
     <div class="card">
       <h2>Plateau Tools</h2>
       <p class="muted">Pick a tool. Each tool has a <b>&#9776; Tools</b> link in its header to come back here.</p>
-      <div class="row"><button class="launch" data-tool="qto" style="width:100%;text-align:left">QTO Takeoff<br><span class="muted" style="font-weight:400;color:var(--navy);opacity:.8">Pipe LF, structures, fittings, conduit and ductbank from the loaded models</span></button></div>
-      <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:var(--navy);opacity:.8">Find points by number or description and zoom to them</span></button></div>
-      <div class="row"><button class="launch" data-tool="props" style="width:100%;text-align:left">Object Properties<br><span class="muted" style="font-weight:400;color:var(--navy);opacity:.8">Description, material, size, layer, elevations and coordinates of the selected objects</span></button></div>
+      <div class="row"><button class="launch" data-tool="qto" style="width:100%;text-align:left">QTO Takeoff<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Pipe LF, structures, fittings, conduit and ductbank from the loaded models</span></button></div>
+      <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Find points by number or description and zoom to them</span></button></div>
+      <div class="row"><button class="launch" data-tool="props" style="width:100%;text-align:left">Object Properties<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Description, material, size, layer, elevations and coordinates of the selected objects</span></button></div>
     </div>
   </div>
 
