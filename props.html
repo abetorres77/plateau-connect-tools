@@ -67,6 +67,8 @@
   .switch { display: flex; gap: 4px; }
   .switch a { color: var(--ink); text-decoration: none; font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
   .switch a.on { background: var(--orange); border-color: var(--orange); color: var(--ink); font-weight: 600; }
+  .switch a.close { font-weight: 700; padding: 2px 7px; }
+  .switch a.close:hover { background: var(--paper); }
   @media (max-width: 420px) {
     main { padding: 6px; }
     .card { padding: 8px; }
@@ -75,7 +77,7 @@
 </style>
 </head>
 <body>
-<header><div class="dot"></div><h1>Object Properties</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a></nav><span class="ver" id="ver"></span></header>
+<header><div class="dot"></div><h1>Object Properties</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="ver" id="ver"></span></header>
 <main>
   <div id="view-connecting" class="card">Connecting to Trimble Connect…</div>
 
@@ -115,29 +117,30 @@
 <script type="module">
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
-const VERSION = "v2026.10.22c";
+const VERSION = "v2026.10.22d";
 const log = (...a) => console.log("[PEIProps]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
 $("ver").textContent = VERSION;
 $("switch").querySelector("a").addEventListener("click", (ev) => { ev.preventDefault(); try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ } location.replace("./index.html?v=" + Date.now()); });
 
-// Connect keeps this iframe alive (0 x 0) when the panel is closed from the rail icon; when it is shown again,
-// go back to the Plateau Tools menu so the icon always opens the list of tools.
+// Connect keeps this iframe alive when the panel is closed from the rail icon. While hidden the frame has no layout
+// (zero viewport or zero document box); when it comes back after being hidden, show the tools menu again.
 (function () {
   let hiddenSince = null;
-  function check() {
-    const hidden = window.innerWidth === 0 || window.innerHeight === 0;   // panel collapsed (not browser-tab switches)
+  function goMenu() { try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ } location.replace("./index.html?v=" + Date.now()); }
+  function poll() {
+    const r = document.documentElement.getBoundingClientRect();
+    const hidden = window.innerWidth === 0 || window.innerHeight === 0 || r.width === 0 || r.height === 0;
     if (hidden) { if (hiddenSince == null) hiddenSince = Date.now(); return; }
-    if (hiddenSince != null && Date.now() - hiddenSince > 700) {
-      try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ }
-      location.replace("./index.html?v=" + Date.now());
-    }
+    if (hiddenSince != null && Date.now() - hiddenSince > 400) goMenu();
     hiddenSince = null;
   }
-  window.addEventListener("resize", check);
-  setInterval(check, 500);
+  window.addEventListener("resize", poll);
+  setInterval(poll, 300);
+  window.plateauGoMenu = goMenu;
 })();
+$("close-tool").addEventListener("click", (ev) => { ev.preventDefault(); window.plateauGoMenu(); });
 
 const UNIT_M = { usft: 1200 / 3937, ift: 0.3048, m: 1 };
 const UNIT_LABEL = { usft: "ft", ift: "ft", m: "m" };
