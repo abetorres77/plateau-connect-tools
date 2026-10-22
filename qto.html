@@ -4,27 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plateau QTO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --navy: #1b2a41; --orange: #f2c244 /* Plateau yellow */; --paper: #f7f8fa; --ink: #22303c;
-    --soft: #5c6b78; --line: #d9dfe5; --ok: #1e7d3c; --err: #b3261e; --warn: #9a6700;
+    --navy: #252a2e; --blue: #0063a3; --blue-dark: #004f83; --orange: #f2c244; /* Plateau yellow accent */
+    --paper: #f1f1f6; --ink: #252a2e; --soft: #6a6e79; --line: #cbcdd6; --ok: #1e8a44; --err: #da212c; --warn: #9a6700;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Segoe UI", -apple-system, sans-serif; font-size: 13px; line-height: 1.45; }
-  header { background: var(--navy); color: #fff; padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--orange); outline-offset: 1px; border-color: var(--orange); }
+  button:hover:not(:disabled) { filter: brightness(.93); }
+  button.secondary:hover:not(:disabled), button.ghost:hover:not(:disabled) { background: var(--paper); filter: none; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Open Sans", "Segoe UI", -apple-system, sans-serif; font-size: 13px; line-height: 1.45; }
+  header { background: #fff; color: var(--ink); border-bottom: 1px solid var(--line); padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
   header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }
   header h1 { font-size: 14px; margin: 0; font-weight: 600; }
   main { padding: 10px; }
-  .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 12px; margin-bottom: 10px; }
   .card h2 { font-size: 13px; margin: 0 0 6px; }
   .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin: 8px 0; }
   label { display: block; font-size: 11px; color: var(--soft); margin-bottom: 2px; }
-  select, input[type="text"] { font: inherit; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); max-width: 100%; }
+  select, input[type="text"] { font: inherit; padding: 5px 7px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink); max-width: 100%; }
   select { min-width: 150px; }
   input[type="text"] { width: 200px; }
-  button { font: inherit; font-weight: 600; padding: 7px 12px; border: none; border-radius: 6px; background: var(--orange); color: var(--navy); cursor: pointer; }
-  button.secondary { background: var(--navy); }
-  button.ghost { background: transparent; color: var(--navy); border: 1px solid var(--line); font-weight: 500; }
+  button { font: inherit; font-weight: 600; padding: 7px 12px; border: none; border-radius: 4px; background: var(--blue); color: #fff; cursor: pointer; }
+  button.secondary { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
+  button.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
   button:disabled { opacity: .5; cursor: default; }
   #status { font-size: 12px; color: var(--soft); min-height: 1.2em; margin-top: 6px; }
   #status.ok { color: var(--ok); } #status.err { color: var(--err); } #status.warn { color: var(--warn); }
@@ -47,15 +51,15 @@
   .map-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
   .map-grid select { width: 100%; min-width: 0; }
   details summary { cursor: pointer; color: var(--navy); font-weight: 600; font-size: 12px; }
-  pre { font-size: 11px; white-space: pre-wrap; word-break: break-word; background: #f1f3f5; padding: 8px; border-radius: 6px; max-height: 50vh; overflow: auto; }
+  pre { font-size: 11px; white-space: pre-wrap; word-break: break-word; background: #f1f3f5; padding: 8px; border-radius: 4px; max-height: 50vh; overflow: auto; }
   .kpis { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
-  .kpi { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-width: 90px; }
+  .kpi { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; min-width: 90px; }
   .kpi b { display: block; font-size: 16px; }
   .kpi span { font-size: 11px; color: var(--soft); }
   [hidden] { display: none !important; }
   .switch { display: flex; gap: 4px; margin-left: auto; }
-  .switch a { color: #fff; text-decoration: none; font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid rgba(255,255,255,.4); opacity: .85; }
-  .switch a.on { background: var(--orange); border-color: var(--orange); color: var(--navy); opacity: 1; font-weight: 600; }
+  .switch a { color: var(--ink); text-decoration: none; font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+  .switch a.on { background: var(--orange); border-color: var(--orange); color: var(--ink); font-weight: 600; }
   /* Connect's viewer side panel is ~300px wide: tighten everything so the tables fit. */
   @media (max-width: 420px) {
     main { padding: 6px; }
