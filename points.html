@@ -49,6 +49,11 @@
   details summary { cursor: pointer; color: var(--navy); font-weight: 600; font-size: 12px; }
   details { margin-top: 6px; }
   .kv { font-size: 11px; color: var(--soft); margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+  #props { margin-top: 6px; }
+  #props h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--soft); margin: 8px 0 2px; }
+  #props table { font-size: 11px; }
+  #props td { white-space: normal; word-break: break-word; vertical-align: top; }
+  #props td:first-child { color: var(--soft); width: 45%; }
   .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .grid3 input { width: 100%; }
   [hidden] { display: none !important; }
@@ -68,13 +73,8 @@
   <div id="view-connecting" class="card">Connecting to Trimble Connect…</div>
 
   <div id="app" hidden>
-    <div class="tabs">
-      <button id="tab-model" class="active">Model points</button>
-      <button id="tab-csv">CSV review</button>
-    </div>
-
     <!-- ===== Source: model objects ===== -->
-    <div id="pane-model">
+    <div>
       <div class="card">
         <h2>Points in the loaded models</h2>
         <div class="models" id="models"></div>
@@ -87,52 +87,7 @@
       </div>
     </div>
 
-    <!-- ===== Source: CSV coordinate file for review ===== -->
-    <div id="pane-csv" hidden>
-      <div class="card">
-        <h2>Coordinate file review</h2>
-        <p class="muted">Load a P,N,E,Z,D file (TBC export, Point Extractor output, field file) to review it next to the model. Search it with the box below; a check mark in the <b>Model</b> column means a scanned model point has the same number, and clicking that row zooms to the model point. Rows without a match zoom to the file coordinate.</p>
-        <div class="row">
-          <div><label>CSV / TXT file</label><input type="file" id="csv-file" accept=".csv,.txt,.pnezd,.pnt"></div>
-          <div><label>Columns</label>
-            <select id="csv-order">
-              <option value="PNEZD">P,N,E,Z,D</option>
-              <option value="PENZD">P,E,N,Z,D</option>
-              <option value="NEZD">N,E,Z,D (no number)</option>
-              <option value="PNEZ">P,N,E,Z</option>
-            </select></div>
-          <div><label>File units</label>
-            <select id="csv-units">
-              <option value="usft">US survey feet</option>
-              <option value="ift">International feet</option>
-              <option value="m">Meters</option>
-            </select></div>
-        </div>
-        <details>
-          <summary>Paste rows instead</summary>
-          <textarea id="csv-text" placeholder="1001,1234567.12,2345678.34,925.10,EP&#10;1002,…"></textarea>
-          <div class="row"><button class="small secondary" id="csv-parse">Load pasted rows</button></div>
-        </details>
-        <p class="muted" id="csv-info">No file loaded. The last loaded file is remembered per project in this browser.</p>
-        <details>
-          <summary>Advanced: file-to-model offset</summary>
-          <p class="muted">Only matters for rows that are not in the model. Select a model object that sits at a known file point, type that point number and click Calibrate; the offset is added to every file coordinate before zooming.</p>
-          <div class="row">
-            <div><label>Point number at selected object</label><input type="text" id="cal-pt" style="width:110px"></div>
-            <button class="small secondary" id="calibrate">Calibrate</button>
-            <label class="inline"><input type="checkbox" id="swap-ne"> Model X is Northing</label>
-          </div>
-          <label>Offset East, North, Elev (file units)</label>
-          <div class="grid3">
-            <input type="number" id="off-e" step="any" value="0">
-            <input type="number" id="off-n" step="any" value="0">
-            <input type="number" id="off-z" step="any" value="0">
-          </div>
-        </details>
-      </div>
-    </div>
-
-    <!-- ===== Search (both sources) ===== -->
+    <!-- ===== Search ===== -->
     <div class="card" id="search-card" hidden>
       <div class="search">
         <input type="search" id="q" placeholder="Point number, range (100-120), list (101,105) or description…" autocomplete="off">
@@ -149,6 +104,7 @@
       <div class="muted" id="count"></div>
       <div class="table-scroll"><table id="results"><thead id="results-head"></thead><tbody></tbody></table></div>
       <div class="kv" id="detail"></div>
+      <div id="props" hidden></div>
     </div>
 
     <div id="status"></div>
@@ -158,7 +114,7 @@
 <script type="module">
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
-const VERSION = "v2026.10.22c";
+const VERSION = "v2026.10.22d";
 const log = (...a) => console.log("[PEIPoints]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -182,20 +138,16 @@ let projectId = "noproject";
 let models = [];
 let knownModelIds = new Set();
 let modelIndex = [];     // entries from the model scan
-let csvIndex = [];       // entries from the coordinate file
-let source = "model";    // "model" | "csv"
 let activeKey = null;
 let topViewNext = false;
 let lastResults = [];
-
-// entry: { key, src, num, numVal, desc, name, elev(m)|null, isPoint, how, modelId, id, cls, props(Map), c:{x,y,z} m|null }
-//    or: { key, src:"csv", num, numVal, desc, n, e, z (file units), elev(m) }
 
 // ---------- connection ----------
 
 async function init() {
   API = await WorkspaceAPI.connect(window.parent, (event, args) => {
     if (event === "viewer.onModelStateChanged" || event === "viewer.onModelReset") refreshModels().catch(() => {});
+    else if (event === "viewer.onSelectionChanged") onSelection(args && args.data).catch(err => log("selection", err));
   }, 180000);
   if (!API.viewer) {
     $("view-connecting").innerHTML = "<h2>Open this tool inside the 3D Viewer</h2><p class='muted'>PEI Points zooms the 3D Viewer camera, so it only works inside the 3D Viewer: open a model there, click Plateau Tools in the viewer's left toolbar and pick Point Search.</p>";
@@ -206,7 +158,6 @@ async function init() {
   $("app").hidden = false;
   loadSettings();
   await refreshModels();
-  restoreCsv();
 }
 
 async function refreshModels() {
@@ -350,57 +301,16 @@ async function scan() {
     $("scan-info").textContent = total + " objects indexed, " + points + " look like survey points" +
       (points ? " (number from: " + Object.entries(hows).map(([k, v]) => k + " ×" + v).join(", ") + ")" : " — use Inspect on a result to see its property names") + ".";
     setStatus("Scan done. Type a point number or description.", "ok");
-    showPane("model");
+    $("search-card").hidden = false;
+    runSearch();
     $("q").focus();
   } finally { $("scan").disabled = false; }
-}
-
-// ---------- coordinate file ----------
-
-function parseCsv(text, order) {
-  const lines = text.split(/\r?\n/);
-  const out = [];
-  const idx = { P: order.indexOf("P"), N: order.indexOf("N"), E: order.indexOf("E"), Z: order.indexOf("Z"), D: order.indexOf("D") };
-  let auto = 1;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || /^[#;]/.test(line)) continue;
-    const cells = (line.includes(",") ? line.split(",") : line.split(/\t+|\s+/)).map(c => c.trim().replace(/^\x22|\x22$/g, ""));
-    const n = parseFloat(cells[idx.N]), e = parseFloat(cells[idx.E]);
-    if (isNaN(n) || isNaN(e)) continue;                   // header or junk row
-    const z = idx.Z >= 0 ? parseFloat(cells[idx.Z]) : NaN;
-    const num = idx.P >= 0 ? (cells[idx.P] || "") : String(auto++);
-    const desc = idx.D >= 0 ? cells.slice(idx.D).join(",").trim() : "";
-    out.push({ key: "c:" + out.length, src: "csv", num, numVal: numVal(num), desc, name: "", isPoint: true, n, e, z: isNaN(z) ? null : z });
-  }
-  return out;
-}
-function applyCsvUnits() { const f = UNIT_M[$("csv-units").value]; for (const p of csvIndex) p.elev = p.z == null ? null : p.z * f; }
-function modelMatch(p) { if (p.numVal == null) return null; return modelIndex.find(e => e.isPoint && e.numVal === p.numVal) || null; }
-
-function loadCsvText(text, label, quiet) {
-  csvIndex = parseCsv(text, $("csv-order").value);
-  applyCsvUnits();
-  if (!csvIndex.length) { setStatus("No coordinate rows found. Check the column order.", "err"); $("csv-info").textContent = "No file loaded."; return; }
-  $("csv-info").textContent = csvIndex.length + " rows loaded from " + label + ".";
-  try { localStorage.setItem(storeKey("csv"), JSON.stringify({ text: text.slice(0, 4000000), label, order: $("csv-order").value })); } catch (e) { /* quota */ }
-  if (!quiet) { setStatus("File loaded. Search it below.", "ok"); showPane("csv"); $("q").focus(); }
-}
-function restoreCsv() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(storeKey("csv")) || "null");
-    if (!saved || !saved.text) return;
-    $("csv-order").value = saved.order || "PNEZD";
-    csvIndex = parseCsv(saved.text, $("csv-order").value);
-    applyCsvUnits();
-    $("csv-info").textContent = csvIndex.length + " rows restored from " + saved.label + " (last load).";
-  } catch (e) { /* ignore */ }
 }
 
 // ---------- settings ----------
 
 const storeKey = (what) => "peiPoints:" + what + ":" + projectId;
-const SETTING_IDS = ["csv-units", "off-e", "off-n", "off-z", "swap-ne", "view-dist", "use-marker", "select-too"];
+const SETTING_IDS = ["view-dist", "use-marker", "select-too"];
 function saveSettings() {
   const s = {};
   for (const id of SETTING_IDS) { const el = $(id); s[id] = el.type === "checkbox" ? el.checked : el.value; }
@@ -416,10 +326,7 @@ for (const id of SETTING_IDS) $(id).addEventListener("change", saveSettings);
 
 // ---------- search ----------
 
-function currentIndex() {
-  if (source === "csv") return csvIndex;
-  return $("points-only").checked ? modelIndex.filter(e => e.isPoint) : modelIndex;
-}
+function currentIndex() { return $("points-only").checked ? modelIndex.filter(e => e.isPoint) : modelIndex; }
 function parseQuery(q) {
   q = q.trim();
   const range = q.match(/^(\d+)\s*-\s*(\d+)$/);
@@ -458,28 +365,20 @@ const fix = (v, d) => (v == null || isNaN(v)) ? "" : Number(v).toFixed(d);
 function runSearch() {
   lastResults = search($("q").value);
   const head = $("results-head"), tb = $("results").querySelector("tbody");
-  head.innerHTML = source === "csv"
-    ? "<tr><th>Pt #</th><th class=num>Northing</th><th class=num>Easting</th><th class=num>Elev</th><th>Description</th><th>Model</th></tr>"
-    : "<tr><th>Pt #</th><th>Description</th><th class=num>Elev</th><th></th></tr>";
+  head.innerHTML = "<tr><th>Pt #</th><th>Description</th><th class=num>Elev</th><th></th></tr>";
   tb.innerHTML = "";
-  const fUnit = source === "csv" ? $("csv-units").value : "usft";
+  const fUnit = "usft";
   for (const e of lastResults.slice(0, MAX_ROWS)) {
     const tr = document.createElement("tr");
     tr.className = "sel" + (e.key === activeKey ? " active" : "");
     tr.dataset.key = e.key;
-    if (source === "csv") {
-      const m = modelMatch(e);
-      tr.innerHTML = "<td><b>" + esc(e.num) + "</b></td>" + td(fix(e.n, 2), "num") + td(fix(e.e, 2), "num") + td(fix(e.z, 2), "num") + td(e.desc) +
-        "<td>" + (m ? pill("\u2713 " + (m.desc || "in model"), "pt") : (modelIndex.length ? pill("not found", "") : "")) + "</td>";
-    } else {
-      tr.innerHTML = "<td><b>" + esc(e.num || e.name || "\u2014") + "</b></td>" + td(e.desc || (e.num ? "" : e.name)) + td(e.elev == null ? "" : fix(e.elev / UNIT_M[fUnit], 2), "num") +
+    tr.innerHTML = "<td><b>" + esc(e.num || e.name || "\u2014") + "</b></td>" + td(e.desc || (e.num ? "" : e.name)) + td(e.elev == null ? "" : fix(e.elev / UNIT_M[fUnit], 2), "num") +
         "<td>" + (e.isPoint ? pill("point", "pt") : pill(e.cls || "object", "")) + "</td>";
-    }
     tr.addEventListener("click", () => zoomTo(e));
     tb.appendChild(tr);
   }
   const total = currentIndex().length;
-  $("count").textContent = total ? (lastResults.length + " of " + total + (lastResults.length > MAX_ROWS ? " (showing first " + MAX_ROWS + ")" : "")) : (source === "csv" ? "Load a coordinate file." : "Scan the models first.");
+  $("count").textContent = total ? (lastResults.length + " of " + total + (lastResults.length > MAX_ROWS ? " (showing first " + MAX_ROWS + ")" : "")) : "Scan the models first.";
 }
 
 // ---------- zoom ----------
@@ -519,12 +418,11 @@ async function zoomTo(e) {
   activeKey = e.key;
   for (const tr of $("results").querySelectorAll("tr")) tr.classList.toggle("active", tr.dataset.key === e.key);
   try {
-    if (e.src === "model") await zoomToObject(e);
-    else { const m = modelMatch(e); if (m) await zoomToObject(m, e); else await zoomToCoordinate(e); }
+    await zoomToObject(e);
   } catch (err) { log("zoom failed", err); setStatus("Zoom failed: " + (err && err.message || err), "err"); }
 }
 
-async function zoomToObject(e, fromCsv) {
+async function zoomToObject(e) {
   const selector = { modelObjectIds: [{ modelId: e.modelId, objectRuntimeIds: [e.id] }] };
   if ($("select-too").checked) await API.viewer.setSelection(selector, "set");
   let c = null;
@@ -532,28 +430,58 @@ async function zoomToObject(e, fromCsv) {
   if (!c && e.c) c = e.c;
   if (c) { await flyTo(c); if ($("use-marker").checked) await placeMarker(c); }
   else await API.viewer.setCamera(selector, { animationTime: 500 });          // last resort: viewer's own fit
-  setStatus("Zoomed to " + (e.num || e.name) + (fromCsv ? " (model point for file row " + fromCsv.num + ")" : ""), "ok");
+  setStatus("Zoomed to " + (e.num || e.name), "ok");
   const f = UNIT_M.usft;
   const where = c ? "\nModel position (US ft): E " + (c.x / f).toFixed(2) + "  N " + (c.y / f).toFixed(2) + "  Z " + (c.z / f).toFixed(2) : "";
-  const interesting = [...e.props].filter(([k]) => /point|desc|elev|north|east|name|code|station|offset|number/i.test(k)).slice(0, 12)
-    .map(([k, p]) => k + ": " + (p.t === 0 ? (Number(p.v) / MM_PER_M / f).toFixed(2) + " ft" : p.v)).join("\n");
-  $("detail").textContent = (e.modelName || "") + where + (interesting ? "\n" + interesting : "");
+  $("detail").textContent = (e.modelName || "") + where;
+  showProps(e);
 }
 
-function fileToViewer(p) {
-  const f = UNIT_M[$("csv-units").value];
-  let e = (p.e + (+$("off-e").value || 0)) * f, n = (p.n + (+$("off-n").value || 0)) * f;
-  const z = ((p.z == null ? 0 : p.z) + (+$("off-z").value || 0)) * f;
-  if ($("swap-ne").checked) [e, n] = [n, e];
-  return { x: e, y: n, z };
+// ---------- properties of the selected point ----------
+
+const fmtVal = (p) => {
+  if (p.t === 0) return (Number(p.v) / MM_PER_M / UNIT_M.usft).toFixed(2) + " ft";
+  if (p.t === 1) return (Number(p.v) / (UNIT_M.usft * UNIT_M.usft)).toFixed(2) + " sf";
+  if (p.t === 2) return (Number(p.v) / Math.pow(UNIT_M.usft, 3) / 27).toFixed(2) + " CY";
+  return String(p.v);
+};
+function showProps(e) {
+  const box = $("props");
+  const groups = new Map();
+  for (const [k, p] of e.props) { const i = k.indexOf(" · "); const set = i < 0 ? "Properties" : k.slice(0, i), name = i < 0 ? k : k.slice(i + 3);
+    if (!groups.has(set)) groups.set(set, []); groups.get(set).push([name, p]); }
+  let html = "<h3>Point " + esc(e.num || e.name || "") + (e.desc ? " \u2014 " + esc(e.desc) : "") + "</h3><table><tbody>" +
+    "<tr><td>Class</td><td>" + esc(e.cls || "") + "</td></tr><tr><td>Name</td><td>" + esc(e.name || "") + "</td></tr>" +
+    (e.how ? "<tr><td>Number from</td><td>" + esc(e.how) + "</td></tr>" : "") + "</tbody></table>";
+  for (const [set, rows] of groups) {
+    html += "<h3>" + esc(set) + "</h3><table><tbody>" + rows.map(([name, p]) => "<tr><td>" + esc(name) + "</td><td>" + esc(fmtVal(p)) + "</td></tr>").join("") + "</tbody></table>";
+  }
+  if (!groups.size) html += "<p class=muted>This object has no properties.</p>";
+  box.innerHTML = html;
+  box.hidden = false;
 }
-async function zoomToCoordinate(p) {
-  const target = fileToViewer(p);
-  await flyTo(target);
-  if ($("use-marker").checked) await placeMarker(target);
-  setStatus("Zoomed to file coordinate " + p.num + (p.desc ? " " + p.desc : "") + (modelIndex.length ? " (no model point with this number)" : ""), "ok");
-  $("detail").textContent = "N " + p.n + "  E " + p.e + (p.z == null ? "" : "  Z " + p.z) + "\nViewer (m): " + target.x.toFixed(3) + ", " + target.y.toFixed(3) + ", " + target.z.toFixed(3);
+let selTimer = null;
+async function onSelection(sel) {
+  // Show the properties of a point picked in the viewer (one object selected). Works before a scan too.
+  const s = (sel || []).find(x => (x.objectRuntimeIds || []).length);
+  if (!s || s.objectRuntimeIds.length !== 1) return;
+  const id = s.objectRuntimeIds[0];
+  let e = modelIndex.find(x => x.modelId === s.modelId && x.id === id);
+  if (!e) {
+    const props = await API.viewer.getObjectProperties(s.modelId, [id]);
+    if (!props || !props[0]) return;
+    e = entryFromObject(s.modelId, props[0]);
+    const m = models.find(x => x.id === s.modelId || x.versionId === s.modelId); e.modelName = m ? m.name : "";
+  }
+  if (e.key === activeKey) { showProps(e); return; }
+  activeKey = e.key;
+  for (const tr of $("results").querySelectorAll("tr")) tr.classList.toggle("active", tr.dataset.key === e.key);
+  $("search-card").hidden = false;
+  $("detail").textContent = (e.modelName || "") + (e.c ? "\nModel position (US ft): E " + (e.c.x / UNIT_M.usft).toFixed(2) + "  N " + (e.c.y / UNIT_M.usft).toFixed(2) + "  Z " + (e.c.z / UNIT_M.usft).toFixed(2) : "");
+  showProps(e);
+  setStatus("Selected in viewer: " + (e.num || e.name || "object " + id), "");
 }
+
 async function placeMarker(pos) {
   try {
     try { await API.viewer.removeIcon({ id: MARKER_ID }); } catch (err) { /* none yet */ }
@@ -563,38 +491,15 @@ async function placeMarker(pos) {
 
 async function zoomAll() {
   if (!lastResults.length) return;
-  const refs = source === "model" ? lastResults : lastResults.map(modelMatch).filter(Boolean);
-  if (refs.length) {
+  const refs = lastResults;
+  {
     const byModel = new Map();
     for (const e of refs.slice(0, 2000)) { if (!byModel.has(e.modelId)) byModel.set(e.modelId, []); byModel.get(e.modelId).push(e.id); }
     const selector = { modelObjectIds: [...byModel].map(([modelId, ids]) => ({ modelId, objectRuntimeIds: ids })) };
     if ($("select-too").checked) await API.viewer.setSelection(selector, "set");
     await API.viewer.setCamera(selector, { animationTime: 500 });
-  } else {
-    const pts = lastResults.map(fileToViewer);
-    const min = { x: Infinity, y: Infinity, z: Infinity }, max = { x: -Infinity, y: -Infinity, z: -Infinity };
-    for (const p of pts) for (const k of "xyz") { min[k] = Math.min(min[k], p[k]); max[k] = Math.max(max[k], p[k]); }
-    const c = { x: (min.x + max.x) / 2, y: (min.y + max.y) / 2, z: (min.z + max.z) / 2 };
-    const dist = Math.max(max.x - min.x, max.y - min.y, 1) * 1.1 + viewDistM();
-    await API.viewer.setCamera({ position: { x: c.x, y: c.y, z: c.z + dist }, lookAt: c, upDirection: { x: 0, y: 1, z: 0 }, projectionType: "perspective", fieldOfView: 60 }, { animationTime: 500 });
   }
   setStatus("Zoomed to " + lastResults.length + " result(s)", "ok");
-}
-
-async function calibrate() {
-  const num = $("cal-pt").value.trim();
-  const p = csvIndex.find(x => x.num === num) || csvIndex.find(x => x.numVal === parseInt(num, 10));
-  if (!p) { setStatus("Point " + num + " is not in the loaded file.", "err"); return; }
-  const sel = await API.viewer.getSelection();
-  const s = (sel || []).find(x => (x.objectRuntimeIds || []).length);
-  if (!s) { setStatus("Select the object that sits at point " + num + " in the viewer first.", "err"); return; }
-  const c = await objectCenter(s.modelId, s.objectRuntimeIds[0]);
-  if (!c) { setStatus("The viewer gave no bounding box for the selected object.", "err"); return; }
-  const f = UNIT_M[$("csv-units").value], swap = $("swap-ne").checked;
-  const modelE = (swap ? c.y : c.x) / f, modelN = (swap ? c.x : c.y) / f, modelZ = c.z / f;
-  $("off-e").value = (modelE - p.e).toFixed(3); $("off-n").value = (modelN - p.n).toFixed(3); $("off-z").value = (p.z == null ? 0 : modelZ - p.z).toFixed(3);
-  saveSettings();
-  setStatus("Offset set from point " + num + ": E " + $("off-e").value + ", N " + $("off-n").value + ", Z " + $("off-z").value, "ok");
 }
 
 // ---------- inspect: show every property of the active (or first) result, and build a copyable inventory ----------
@@ -613,7 +518,6 @@ function inventory() {
 }
 async function inspect() {
   let e = lastResults.find(x => x.key === activeKey) || lastResults[0];
-  if (e && e.src === "csv") e = modelMatch(e);
   if (!e) {
     // nothing in the list: fall back to the object selected in the viewer
     try { const sel = await API.viewer.getSelection(); const s = (sel || []).find(x => (x.objectRuntimeIds || []).length);
@@ -621,31 +525,16 @@ async function inspect() {
   }
   if (!e) { setStatus("Nothing to inspect: scan the models and pick a result, or select an object in the viewer.", "err"); return; }
   $("detail").textContent = "INSPECT " + (e.modelName || "") + "\nclass: " + e.cls + "   name: " + e.name + "\npoint number: " + (e.num || "(none)") + "  from: " + (e.how || "-") + "   isPoint: " + e.isPoint + "\n" + dumpProps(e);
+  showProps(e);
   try { await navigator.clipboard.writeText(JSON.stringify(inventory(), null, 1)); setStatus("Properties shown below; a JSON inventory of the scan was copied to the clipboard — paste it to Abe/Claude to fix the matching.", "ok"); }
   catch (err) { setStatus("Properties shown below.", "ok"); }
 }
 
 // ---------- UI wiring ----------
 
-function showPane(which) {
-  source = which;
-  $("tab-model").classList.toggle("active", which === "model");
-  $("tab-csv").classList.toggle("active", which === "csv");
-  $("pane-model").hidden = which !== "model";
-  $("pane-csv").hidden = which !== "csv";
-  $("search-card").hidden = !(which === "model" ? modelIndex.length : csvIndex.length);
-  runSearch();
-}
-$("tab-model").addEventListener("click", () => showPane("model"));
-$("tab-csv").addEventListener("click", () => showPane("csv"));
 $("scan").addEventListener("click", () => scan().catch(e => { log(e); setStatus("Scan failed: " + (e && e.message || e), "err"); $("scan").disabled = false; }));
 $("refresh-models").addEventListener("click", () => refreshModels().catch(() => {}));
 $("points-only").addEventListener("change", runSearch);
-$("csv-file").addEventListener("change", async (ev) => { const f = ev.target.files && ev.target.files[0]; if (f) loadCsvText(await f.text(), f.name); });
-$("csv-parse").addEventListener("click", () => loadCsvText($("csv-text").value, "pasted rows"));
-$("csv-order").addEventListener("change", () => { try { const saved = JSON.parse(localStorage.getItem(storeKey("csv")) || "null"); if (saved && saved.text) loadCsvText(saved.text, saved.label); } catch (e) { /* ignore */ } });
-$("csv-units").addEventListener("change", () => { applyCsvUnits(); runSearch(); });
-$("calibrate").addEventListener("click", () => calibrate().catch(e => setStatus("Calibrate failed: " + (e && e.message || e), "err")));
 $("top-view").addEventListener("click", () => { topViewNext = true; setStatus("Next zoom looks straight down.", ""); });
 $("zoom-all").addEventListener("click", () => zoomAll().catch(e => setStatus("Zoom failed: " + (e && e.message || e), "err")));
 $("inspect").addEventListener("click", () => inspect().catch(e => setStatus("Inspect failed: " + (e && e.message || e), "err")));
@@ -663,11 +552,10 @@ window.addEventListener("message", async (ev) => {
   if (!/(^|\.)connect\.trimble\.com$|^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(ev.origin)) return;
   const reply = (r) => { try { ev.source.postMessage(Object.assign({ peiResult: d.peiCmd, from: d.from }, r), ev.origin); } catch (e) { /* ignore */ } };
   try {
-    if (d.peiCmd === "status") reply({ version: VERSION, source, modelIndex: modelIndex.length, points: modelIndex.filter(e => e.isPoint).length, csvIndex: csvIndex.length, models: models.map(m => m.name) });
+    if (d.peiCmd === "status") reply({ version: VERSION, modelIndex: modelIndex.length, points: modelIndex.filter(e => e.isPoint).length, models: models.map(m => m.name) });
     else if (d.peiCmd === "scan") { await scan(); reply({ modelIndex: modelIndex.length, points: modelIndex.filter(e => e.isPoint).length, info: $("scan-info").textContent }); }
-    else if (d.peiCmd === "search") { showPane(d.source === "csv" ? "csv" : "model"); $("q").value = d.q || ""; runSearch(); reply({ hits: lastResults.length, first: lastResults.slice(0, 20).map(e => ({ num: e.num, desc: e.desc, src: e.src, how: e.how })) }); }
+    else if (d.peiCmd === "search") { $("q").value = d.q || ""; runSearch(); reply({ hits: lastResults.length, first: lastResults.slice(0, 20).map(e => ({ num: e.num, desc: e.desc, src: e.src, how: e.how })) }); }
     else if (d.peiCmd === "zoom") { $("q").value = d.q || ""; runSearch(); if (lastResults.length) await zoomTo(lastResults[0]); reply({ zoomed: lastResults.length ? lastResults[0].num : null, status: $("status").textContent, detail: $("detail").textContent }); }
-    else if (d.peiCmd === "loadCsv") { loadCsvText(d.text || "", d.label || "posted rows"); reply({ csvIndex: csvIndex.length }); }
     else if (d.peiCmd === "inventory") reply({ inventory: inventory() });
     else reply({ error: "unknown command" });
   } catch (e) { reply({ error: String(e && e.message || e) }); }
