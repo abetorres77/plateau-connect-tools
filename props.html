@@ -111,12 +111,29 @@
 <script type="module">
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
-const VERSION = "v2026.10.22b";
+const VERSION = "v2026.10.22c";
 const log = (...a) => console.log("[PEIProps]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
 $("ver").textContent = VERSION;
 $("switch").querySelector("a").addEventListener("click", (ev) => { ev.preventDefault(); try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ } location.replace("./index.html?v=" + Date.now()); });
+
+// Connect keeps this iframe alive (0 x 0) when the panel is closed from the rail icon; when it is shown again,
+// go back to the Plateau Tools menu so the icon always opens the list of tools.
+(function () {
+  let hiddenSince = null;
+  function check() {
+    const hidden = window.innerWidth === 0 || window.innerHeight === 0;   // panel collapsed (not browser-tab switches)
+    if (hidden) { if (hiddenSince == null) hiddenSince = Date.now(); return; }
+    if (hiddenSince != null && Date.now() - hiddenSince > 700) {
+      try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ }
+      location.replace("./index.html?v=" + Date.now());
+    }
+    hiddenSince = null;
+  }
+  window.addEventListener("resize", check);
+  setInterval(check, 500);
+})();
 
 const UNIT_M = { usft: 1200 / 3937, ift: 0.3048, m: 1 };
 const UNIT_LABEL = { usft: "ft", ift: "ft", m: "m" };
@@ -207,8 +224,8 @@ const F = {
 const ELEV_RE = /elev|invert|^rim|sump|flow ?line|^fl$|^z$|top of|bottom of|^height$|^level$/;
 const COORD_RE = /northing|easting|^x$|^y$|^n$|^e$|start ?(x|y|n|e)|end ?(x|y|n|e)|station|offset|^latitude$|^longitude$/;
 
-function interpret(modelId, o, modelName) {
-  const flat = flatten(o);
+function interpret(modelId, o, modelName, flatOverride) {
+  const flat = flatOverride || flatten(o);
   const pn = (o.product && o.product.name) || "";
   const pick = (list) => { const r = firstProp(flat, list); return r ? String(r.p.v).trim() : ""; };
   const name = pn || pick(F.name);
@@ -225,7 +242,42 @@ function interpret(modelId, o, modelName) {
     else if (COORD_RE.test(sn)) { const m = lengthM(p); coords.push({ name: p.name, m, raw: p.v }); }
   }
   return { key: modelId + ":" + o.id, modelId, id: o.id, modelName, cls: o.class || "", objType: (o.product && o.product.objectType) || "",
-    name, uniq, label, desc, material: pick(F.material), size, type: pick(F.type), network: pick(F.network), elevs, coords, props: flat, bbox: null, layer: null };
+    name, uniq, label, desc, material: pick(F.material), size, type: pick(F.type), network: pick(F.network), elevs, coords, props: flat, own: flatten(o), raw: o, bbox: null, layer: null, parents: null };
+}
+
+// The viewer usually selects the geometry node of a Revit element (a "Solid" with almost no properties); the data lives
+// on its hierarchy parents (the element instance, its type, level, category...). Pull those in: key fields fall back to
+// the nearest parent that has them, and "All properties" lists the parents' sets after the object's own.
+async function enrich(it) {
+  if (it.parents) return it;
+  it.parents = [];
+  let parents = [];
+  try { parents = (await API.viewer.getHierarchyParents(it.modelId, [it.id], undefined, true)) || []; } catch (e) { log("getHierarchyParents", e); return it; }
+  const ids = parents.map(p => p && p.id).filter(id => id != null && id !== it.id);
+  if (!ids.length) return it;
+  let props = [];
+  try { props = (await API.viewer.getObjectProperties(it.modelId, ids)) || []; } catch (e) { log("parent properties", e); return it; }
+  const byId = new Map(props.map(o => [o.id, o]));
+  const merged = new Map(it.own);
+  for (const id of ids) {                                   // nearest parent first (child -> root order)
+    const o = byId.get(id); if (!o) continue;
+    const flat = flatten(o);
+    const pname = (o.product && o.product.name) || ("#" + id), ptype = (o.product && o.product.objectType) || o.class || "";
+    if (!flat.size) continue;
+    it.parents.push({ id, name: pname, type: ptype, props: flat });
+    for (const [k, p] of flat) if (!merged.has(k)) merged.set(k, p);
+  }
+  if (it.parents.length) {
+    const re = interpret(it.modelId, it.raw, it.modelName, merged);
+    // a geometry leaf ("Solid" / "Default") takes its name from the element node above it
+    if (/^solid$/i.test(it.objType) || /^default$/i.test(it.name) || !it.name) { it.name = it.parents[0].name; it.label = ""; }
+    for (const f of ["name", "uniq", "label", "desc", "material", "size", "type", "network"]) if (!it[f] && re[f]) it[f] = re[f];
+    if (it.uniq && it.uniq.toLowerCase() !== it.name.toLowerCase()) it.label = it.name + " (" + it.uniq + ")"; else it.label = it.name || it.uniq;
+    if (!it.elevs.length) it.elevs = re.elevs;
+    if (!it.coords.length) it.coords = re.coords;
+    it.props = merged;
+  }
+  return it;
 }
 
 // ---------- connection & selection ----------
@@ -281,6 +333,7 @@ async function readSelection(sel) {
   $("sel-info").textContent = items.length + " object(s) selected" + (total > items.length ? " (" + total + " in the viewer; showing the first " + items.length + ")" : "") + ".";
   render();
   if (items.length === 1) showDetail(items[0]);
+  else if (items.length <= 60) enrichAll().catch(() => {});     // small multi-selections get parent data for the table too
 }
 
 // Layer: a Layer property when the export has one, else the hierarchy ancestor whose name is one of the model's layers.
@@ -325,6 +378,10 @@ function render() {
 }
 
 function showDetail(it) {
+  renderDetail(it);
+  if (!it.parents) enrich(it).then(() => { if (activeKey === it.key) { renderDetail(it); render(); } });
+}
+function renderDetail(it) {
   const L = UNIT_LABEL[unit()];
   $("detail-card").hidden = false;
   $("d-title").textContent = it.label || it.cls || "Object";
@@ -341,10 +398,20 @@ function showDetail(it) {
   }
   for (const c of it.coords) geo.push([c.name, c.m != null ? fix(toU(c.m)) + " " + L : String(c.raw)]);
   $("d-geo").querySelector("tbody").innerHTML = geo.length ? geo.map(([k, v]) => "<tr><td>" + esc(k) + "</td><td>" + esc(v) + "</td></tr>").join("") : "<tr><td colspan=2 class=muted>No elevation or coordinate data for this object.</td></tr>";
-  const groups = new Map();
-  for (const [, p] of it.props) { if (HIDE_PROP.test(p.name.trim()) || SKIP_SET.test(p.set)) continue; if (!groups.has(p.set)) groups.set(p.set, []); groups.get(p.set).push(p); }
-  let html = "";
-  for (const [set, rows] of groups) html += "<h3>" + esc(set) + "</h3><table><tbody>" + rows.map(p => "<tr><td>" + esc(p.name) + "</td><td>" + esc(fmtVal(p)) + "</td></tr>").join("") + "</tbody></table>";
+  const section = (flat, seen) => {
+    const groups = new Map();
+    for (const [k, p] of flat) { if (HIDE_PROP.test(p.name.trim()) || SKIP_SET.test(p.set) || seen.has(k)) continue; seen.add(k); if (!groups.has(p.set)) groups.set(p.set, []); groups.get(p.set).push(p); }
+    let h = "";
+    for (const [set, rows] of groups) h += "<h3>" + esc(set) + "</h3><table><tbody>" + rows.map(p => "<tr><td>" + esc(p.name) + "</td><td>" + esc(fmtVal(p)) + "</td></tr>").join("") + "</tbody></table>";
+    return h;
+  };
+  const seen = new Set();
+  let html = section(it.own, seen);
+  for (const par of (it.parents || [])) {
+    const h = section(par.props, seen);
+    if (h) html += "<h3 style='margin-top:12px;color:var(--navy)'>\u2B11 " + esc(par.name) + (par.type ? " <span class=muted>(" + esc(par.type) + ")</span>" : "") + "</h3>" + h;
+  }
+  if (!it.parents) html += "<p class=muted>Loading parent element data\u2026</p>";
   $("props").innerHTML = html || "<p class=muted>No properties.</p>";
   layerOf(it).then(l => { if (activeKey === it.key) { const td = $("d-layer"); if (td) td.textContent = l || "(none)"; } });
 }
@@ -360,15 +427,16 @@ function rows() {
   return [head, ...body];
 }
 const csvCell = (v) => { const s = v == null ? "" : String(v); return /[\x22,\r\n]/.test(s) ? "\x22" + s.replace(/\x22/g, "\x22\x22") + "\x22" : s; };
+async function enrichAll() { for (const it of items.slice(0, 400)) await enrich(it); render(); }
 async function copyExcel() {
   if (!items.length) { setStatus("Nothing selected.", "err"); return; }
-  await Promise.all(items.map(layerOf));
+  await enrichAll(); await Promise.all(items.map(layerOf));
   try { await navigator.clipboard.writeText(rows().map(r => r.join("\t")).join("\n")); setStatus(items.length + " row(s) copied — paste into Excel.", "ok"); }
   catch (e) { setStatus("Clipboard blocked by the browser; use CSV instead.", "err"); }
 }
 async function downloadCsv() {
   if (!items.length) { setStatus("Nothing selected.", "err"); return; }
-  await Promise.all(items.map(layerOf));
+  await enrichAll(); await Promise.all(items.map(layerOf));
   const blob = new Blob([rows().map(r => r.map(csvCell).join(",")).join("\r\n")], { type: "text/csv" });
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "Connect_Object_Properties.csv"; a.click(); URL.revokeObjectURL(a.href);
 }
@@ -388,7 +456,7 @@ window.addEventListener("message", async (ev) => {
   const reply = (r) => { try { ev.source.postMessage(Object.assign({ peiResult: d.peiCmd, from: d.from }, r), ev.origin); } catch (e) { /* ignore */ } };
   try {
     if (d.peiCmd === "status") reply({ version: VERSION, items: items.length, active: activeKey });
-    else if (d.peiCmd === "read") { await readSelection(await API.viewer.getSelection()); await Promise.all(items.map(layerOf)); reply({ rows: rows() }); }
+    else if (d.peiCmd === "read") { await readSelection(await API.viewer.getSelection()); await enrichAll(); await Promise.all(items.map(layerOf)); reply({ rows: rows() }); }
     else if (d.peiCmd === "detail") { const it = items.find(x => x.key === activeKey); reply(it ? { name: it.name, label: it.label, uniq: it.uniq, desc: it.desc, material: it.material, size: it.size, layer: it.layer, elevs: it.elevs, bbox: it.bbox, props: [...it.props.keys()] } : { error: "no active object" }); }
     else reply({ error: "unknown command" });
   } catch (e) { reply({ error: String(e && e.message || e) }); }
