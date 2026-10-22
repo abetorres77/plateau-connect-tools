@@ -4,7 +4,7 @@ Search survey points by **point number**, **number range** (`1005-1020`), **list
 
 | File | What it is |
 |---|---|
-| `manifest-points.json` | The manifest you register in Connect. `extensionType: ["3dviewer"]`, `type: "panel"` — the tool opens as a tab in the viewer's left side panel. |
+| `manifest-points.json` | Stand-alone fallback manifest (normally not needed — see *Part of Plateau Tools*). `extensionType: ["3dviewer"]`, `type: "panel"` — the tool opens as a tab in the viewer's left side panel. |
 | `points.html` | The extension page (version tag in the header). |
 | `pin.png` | Marker dropped in the viewer when zooming to a point from a point file. |
 | `icon.png` | PEI menu icon (Connect renders nothing without one). |
@@ -12,7 +12,11 @@ Search survey points by **point number**, **number range** (`1005-1020`), **list
 | `harness.html` | Local fake-host test page: 40 Civil 3D COGO points, 3 IFC control points, a Revit-style model with no points. |
 | `deploy.ps1` | Publishes `points.html`, `manifest-points.json`, `pin.png`, `README-points.md` to `abetorres77/plateau-connect-tools` (GitHub Pages). `-DryRun` to preview. |
 
-## Install (project admin, once per project)
+## Part of Plateau Tools (since 2026-10-22)
+
+PEI Points is folded into the combined **Plateau Tools** extension (`manifest.json` in `Y:\Private\abe.torres\Claude Drive\Trimble Connect\`): the project-side menu has a **Point Search** entry whose "Open the 3D Viewer" button lands on this tool, and inside the viewer panel a **QTO / Points** switcher in the header flips between the two tools (the last one used is remembered and reopened by `index.html`). Projects that already have Plateau Tools installed get it automatically on the next viewer load; nothing to add. `manifest-points.json` below remains as a stand-alone fallback only.
+
+## Stand-alone install (fallback only)
 
 1. Open the project in Trimble Connect for Browser.
 2. Left nav **Settings → Apps & Capabilities → + Add Custom**.
