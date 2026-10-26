@@ -75,7 +75,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>PEI QTO</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.10.22e</span></header>
+<header><span class="dot"></span><h1>PEI QTO</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.10.26</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -248,7 +248,7 @@ const FIELDS = {
   angle:    { label: "Bend angle",              auto: [E(/^angle$/i), E(/^bend angle$/i), /\bangle\b/i] },
   radius:   { label: "Bend (centerline) radius", auto: [E(/^(center|centre|centerline|centreline|bend) ?-?radius$/i), T(/^(center|centre|centerline|bend) ?-?radius$/i), /center.*radius|bend radius/i, E(/^radius$/i)] },
   volume:   { label: "Volume (ductbank concrete)", auto: [E(/^volume$/i), /net ?volume/i, /gross ?volume/i, /^volume$/i, /\bvolume\b/i], skipSets: /3d visualization|^item$/i },
-  smaterial:{ label: "Structural material",     auto: [E(/^structural material$/i), { set: /^revit material$/i, name: /^name$/i }, E(/^material$/i), /structural material/i], skipSets: /3d visualization|^item$/i }
+  smaterial:{ label: "Structural material",     auto: [E(/^structural material$/i), /structural material/i, { set: /^revit material$/i, name: /^name$/i }, E(/^material$/i)], skipSets: /3d visualization|^item$/i }
 };
 const propName = (key) => { const i = key.lastIndexOf(" · "); return i < 0 ? key : key.slice(i + 3); };
 const setName = (key) => { const i = key.lastIndexOf(" · "); return i < 0 ? "" : key.slice(0, i); };
@@ -520,6 +520,15 @@ function structureTypeCode(name) {
 }
 
 const mmIn = (p) => (p && p.t === 0 && typeof p.v === "number") ? p.v / 25.4 : null;
+// Dimension in inches from any representation: LengthMeasure (mm), a bare number or a numeric string in the
+// model unit (Revit 2023 TrimBIM exports duct Width / Height as strings like "1.50" = feet), or a unit-suffixed string.
+let curModelUnit = "usft";
+function dimIn(p, modelUnit) {
+  const i = mmIn(p);
+  if (i != null) return i;
+  const m = lengthMeters(p, modelUnit || curModelUnit);
+  return m == null || !isFinite(m) || m <= 0 ? null : m / 0.0254;
+}
 // Structure size for Revit families that have no "Element · Size": box Length x Width (feet), else
 // a round OD / diameter parameter (inches).
 function revitStructSize(o) {
@@ -596,7 +605,7 @@ function sizeNum(s) {
 }
 // Raceway sizes: W x H for cable trays (Width/Height params or a "12"x4"" string), else trade fraction.
 function racewaySize(o, f) {
-  const Wd = mmIn(f.widthP), Ht = mmIn(f.heightP);                       // mapped Width / Height fields
+  const Wd = dimIn(f.widthP), Ht = dimIn(f.heightP);                     // mapped Width / Height fields
   if (Wd && Ht) return fmtIn(Wd) + "x" + fmtIn(Ht);
   const s = str(f.sizeP), m = s.match(/(\d+(?:\.\d+)?)"?\s*x\s*(\d+(?:\.\d+)?)"?/i);
   if (m) return fmtIn(+m[1]) + "x" + fmtIn(+m[2]);
@@ -684,6 +693,7 @@ function lengthMeters(p, modelUnit) {
 }
 
 function interpret(o, modelUnit) {
+  curModelUnit = modelUnit || curModelUnit;
   const f = {
     type: str(readField(o, "type")),
     sizeP: readField(o, "size"), materialP: readField(o, "material"),
@@ -724,7 +734,7 @@ function interpret(o, modelUnit) {
       f.desc = [family, typeName].filter((x, i, a) => x && a.indexOf(x) === i).join(" : ") || f.desc;
       const sm = str(f.smaterialP);
       material = sm ? materialLabel({ materialP: f.smaterialP, sizeP: null, descP: null }) : "(material not in model)";
-      const Wd = mmIn(f.widthP), Ht = mmIn(f.heightP), Dm = mmIn(f.odP);
+      const Wd = dimIn(f.widthP, modelUnit), Ht = dimIn(f.heightP, modelUnit), Dm = dimIn(f.odP, modelUnit);
       if (Wd && Ht) size = fmtIn(Wd) + "x" + fmtIn(Ht);
       else if (Dm) size = fmtIn(Dm) + " round";
       else size = "(no size)";
@@ -735,9 +745,13 @@ function interpret(o, modelUnit) {
       // else width × height × length from the mapped Width / Height (Revit framing b / h). Material = the
       // mapped Structural material (Revit "Structural Material" / Revit Material), normalised to a trade name.
       f.desc = [family, typeName].filter((x, i, a) => x && a.indexOf(x) === i).join(" : ") || f.desc;
+      // Revit duct system (System Type · Name, e.g. "MV DUCT BANK" / "MV DUCT BANK BEYOND 7.5'") tells the bank class
+      // in every export version; the Revit material colour name ("MV DUCT BANK RED") only exists in some exports.
+      const sysName = f.network || "";
+      if (sysName && !/^(supply|return|exhaust) air$/i.test(sysName) && !f.desc.toLowerCase().includes(sysName.toLowerCase())) f.desc += " [" + sysName + "]";
       const sm = str(f.smaterialP);
       material = sm ? materialLabel({ materialP: f.smaterialP, sizeP: null, descP: null }) : "(material not in model)";
-      const Wd = mmIn(f.widthP), Ht = mmIn(f.heightP), Dm = mmIn(f.odP);
+      const Wd = dimIn(f.widthP, modelUnit), Ht = dimIn(f.heightP, modelUnit), Dm = dimIn(f.odP, modelUnit);
       if (Wd && Ht) size = fmtIn(Wd) + "x" + fmtIn(Ht);
       else if (Dm) size = fmtIn(Dm) + " round";
       else size = "(no size)";
@@ -756,7 +770,7 @@ function interpret(o, modelUnit) {
     vol = volumeM3(f.volumeP, modelUnit);
     if (vol != null) volKind = "model";
     else {
-      const Wd = mmIn(f.widthP), Ht = mmIn(f.heightP), Dm = mmIn(f.odP);
+      const Wd = dimIn(f.widthP, modelUnit), Ht = dimIn(f.heightP, modelUnit), Dm = dimIn(f.odP, modelUnit);
       const area = Wd && Ht ? (Wd * 0.0254) * (Ht * 0.0254) : Dm ? Math.PI / 4 * Math.pow(Dm * 0.0254, 2) : null;
       // bend: centerline arc = angle (rad) x bend radius; a bend exported with a Length uses that instead
       const rad = bankFit ? lengthMeters(f.radiusP, modelUnit) : null;
