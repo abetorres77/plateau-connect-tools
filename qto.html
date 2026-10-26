@@ -748,7 +748,7 @@ function interpret(o, modelUnit) {
       // Revit duct system (System Type · Name, e.g. "MV DUCT BANK" / "MV DUCT BANK BEYOND 7.5'") tells the bank class
       // in every export version; the Revit material colour name ("MV DUCT BANK RED") only exists in some exports.
       const sysName = f.network || "";
-      if (sysName && !/^(supply|return|exhaust) air$/i.test(sysName) && !f.desc.toLowerCase().includes(sysName.toLowerCase())) f.desc += " [" + sysName + "]";
+      if (sysName && !/^(supply|return|exhaust) air$|^undefined$|^none$/i.test(sysName) && !f.desc.toLowerCase().includes(sysName.toLowerCase())) f.desc += " [" + sysName + "]";
       const sm = str(f.smaterialP);
       material = sm ? materialLabel({ materialP: f.smaterialP, sizeP: null, descP: null }) : "(material not in model)";
       const Wd = dimIn(f.widthP, modelUnit), Ht = dimIn(f.heightP, modelUnit), Dm = dimIn(f.odP, modelUnit);
