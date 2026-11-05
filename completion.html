@@ -101,8 +101,7 @@
       <div class="row">
         <div><label>Units</label><select id="units"><option value="usft">US survey feet</option><option value="ift">International feet</option></select></div>
         <div><label>Tolerance (ft)</label><input type="number" id="tol" value="3" min="0.1" step="0.5"></div>
-        <label class="inline" title="A matched pipe counts as complete even if its as-built length differs from the design"><input type="checkbox" id="anymatch" checked> Matched pipe = complete</label>
-        <div id="complete-wrap" hidden><label>Pipe complete at (%)</label><input type="number" id="complete" value="95" min="1" max="100"></div>
+
         <button class="small ghost" id="refresh">Refresh models</button>
       </div>
       <div class="row">
@@ -122,7 +121,7 @@
 
     <div class="tiles" id="tiles" hidden>
       <div class="tile"><div class="t">Overall completion</div><div class="big" id="t-overall">-</div><div class="s" id="t-overall-s"></div></div>
-      <div class="tile"><div class="t">Pipe installed by length</div><div class="big" id="t-pipes">-</div><div class="s" id="t-pipes-s"></div></div>
+      <div class="tile"><div class="t">Pipe complete by design length</div><div class="big" id="t-pipes">-</div><div class="s" id="t-pipes-s"></div></div>
       <div class="tile"><div class="t">Structures / other</div><div class="big" id="t-points">-</div><div class="s" id="t-points-s"></div></div>
       <div class="tile"><div class="t">Model-to-model</div><div class="big" id="t-model">-</div><div class="s" id="t-model-s"></div></div>
     </div>
@@ -132,7 +131,7 @@
         <button class="active" data-tab="cat">By category</button><button data-tab="size">By pipe size</button><button data-tab="items">Items</button><button data-tab="abonly">As-built only</button>
       </div>
       <div class="row" id="item-filter" hidden>
-        <select id="f-status"><option value="">All statuses</option><option>Complete</option><option>Partial</option><option>Not Started</option></select>
+        <select id="f-status"><option value="">All statuses</option><option>Complete</option><option>Not Started</option></select>
         <input type="search" id="f-text" placeholder="Find name, size, structure…" style="flex:1;min-width:120px">
         <span class="muted">Click a row: the viewer selects the objects and zooms to them.</span>
       </div>
@@ -308,7 +307,7 @@ function compareOnly() {
   if (!P || !A) return;
   const checked = [...document.querySelectorAll("#cats input:checked")].map(i => i.value);
   const all = document.querySelectorAll("#cats input").length;
-  const opt = { toleranceFt: parseFloat($("tol").value) || 3, completePct: parseFloat($("complete").value) || 95, matchIsComplete: $("anymatch").checked, includedCategories: (all && checked.length < all) ? new Set(checked) : null };
+  const opt = { toleranceFt: parseFloat($("tol").value) || 3, includedCategories: (all && checked.length < all) ? new Set(checked) : null };
   result = C.compare(P.items, A.items, opt);
   result.meta = { proposedName: P.name, asBuiltName: A.name, proposedCount: P.count, asBuiltCount: A.count, generated: new Date().toLocaleString() };
   render();
@@ -319,19 +318,19 @@ function compareOnly() {
 function render() {
   const r = result; if (!r) return;
   $("tiles").hidden = false; $("res-card").hidden = false;
-  $("t-overall").textContent = C.pct(C.pctWeighted(r.overall)); $("t-overall-s").textContent = r.overall.complete + " of " + r.overall.count + " items complete, " + r.overall.partial + " partial";
+  $("t-overall").textContent = C.pct(C.pctByCount(r.overall)); $("t-overall-s").textContent = r.overall.complete + " of " + r.overall.count + " items complete";
   $("t-pipes").textContent = C.pct(C.pctByLength(r.pipes)); $("t-pipes-s").textContent = C.lenF(r.pipes.installedLen) + " of " + C.lenF(r.pipes.proposedLen) + " LF";
   $("t-points").textContent = C.pct(C.pctByCount(r.points)); $("t-points-s").textContent = r.points.complete + " of " + r.points.count + " complete";
-  $("t-model").textContent = C.pct(r.modelPctByCount); $("t-model-s").textContent = r.modelAsBuiltCount + " of " + r.modelProposedCount + " objects; " + C.lenF(r.modelAsBuiltLen) + " of " + C.lenF(r.modelProposedLen) + " LF (" + C.pct(r.modelPctByLength) + ")";
+  $("t-model").textContent = C.pct(r.modelPctByCount); $("t-model-s").textContent = r.modelAsBuiltCount + " as-built of " + r.modelProposedCount + " proposed objects";
   renderTable();
 }
 const TH = {
-  cat: ["Category", "Items", "Complete", "Partial", "Not started", "% by count", "Proposed LF", "Installed LF", "% by length", "% weighted"],
-  size: ["Pipe size", "Pipes", "Complete", "Partial", "Not started", "Proposed LF", "Installed LF", "% by length", "% weighted"],
-  items: ["Status", "Type", "Name", "Description", "Layer", "Design LF", "As-built LF", "%", "Matched as-built", "Match", "Dist ft", "From", "To"],
-  abonly: ["Type", "Name", "Description", "Layer", "LF", "Easting", "Northing"]
+  cat: ["Category", "Items", "Complete", "Not started", "% complete", "Design LF", "Complete LF", "% by length"],
+  size: ["Pipe size", "Pipes", "Complete", "Not started", "% complete", "Design LF", "Complete LF", "% by length"],
+  items: ["Status", "Type", "Name", "Description", "Layer", "Design LF", "Matched as-built", "Match", "Dist ft", "From", "To"],
+  abonly: ["Type", "Name", "Description", "Layer", "Easting", "Northing"]
 };
-const NUM = { cat: [1, 2, 3, 4, 5, 6, 7, 8, 9], size: [1, 2, 3, 4, 5, 6, 7, 8], items: [5, 6, 7, 10], abonly: [4, 5, 6] };
+const NUM = { cat: [1, 2, 3, 4, 5, 6, 7], size: [1, 2, 3, 4, 5, 6, 7], items: [5, 8], abonly: [4, 5] };
 const f1 = v => isNaN(v) ? "" : Number(v).toFixed(1);
 const f0 = v => isNaN(v) ? "" : Number(v).toFixed(0);
 
@@ -350,9 +349,7 @@ function renderTable() {
   if (tab === "cat" || tab === "size") {
     const groups = tab === "cat" ? r.byCategory : r.bySize;
     for (const g of groups) {
-      const v = tab === "cat"
-        ? [g.key, g.count, g.complete, g.partial, g.notStarted, f1(C.pctByCount(g)), g.proposedLen > 0 ? f1(g.proposedLen) : "", g.proposedLen > 0 ? f1(g.installedLen) : "", g.proposedLen > 0 ? f1(C.pctByLength(g)) : "", f1(C.pctWeighted(g))]
-        : [g.key, g.count, g.complete, g.partial, g.notStarted, f1(g.proposedLen), f1(g.installedLen), f1(C.pctByLength(g)), f1(C.pctWeighted(g))];
+      const v = [g.key, g.count, g.complete, g.notStarted, f1(C.pctByCount(g)), g.proposedLen > 0 ? f1(g.proposedLen) : "", g.proposedLen > 0 ? f1(g.installedLen) : "", g.proposedLen > 0 ? f1(C.pctByLength(g)) : ""];
       rows.push("<tr>" + v.map((x, i) => cell(x, i)).join("") + "</tr>");
     }
     $("count").textContent = groups.length + " rows";
@@ -360,13 +357,13 @@ function renderTable() {
     const list = visibleItems();
     list.forEach((it, idx) => {
       const p = it.proposed;
-      const v = [it.status, p.type, p.name, p.desc, p.layer, p.isPipeLike ? f1(it.proposedLen) : "", p.isPipeLike && it.asBuilt.length ? f1(it.asBuiltLen) : "", f0(it.progress * 100), C.asBuiltNames(it), it.method, f1(it.dist), C.startStruct(p), C.endStruct(p)];
+      const v = [it.status, p.type, p.name, p.desc, p.layer, p.isPipeLike ? f1(it.proposedLen) : "", C.asBuiltNames(it), it.method, f1(it.dist), C.startStruct(p), C.endStruct(p)];
       rows.push('<tr class="sel" data-i="' + idx + '">' + v.map((x, i) => cell(x, i, i === 0 ? it.status.replace(" ", "") : "")).join("") + "</tr>");
     });
     $("count").textContent = list.length + " of " + r.items.length + " proposed objects";
   } else {
     r.asBuiltOnly.forEach((a, idx) => {
-      const v = [a.type, a.name, a.desc, a.layer, a.isPipeLike ? f1(a.len) : "", f1(a.midX), f1(a.midY)];
+      const v = [a.type, a.name, a.desc, a.layer, f1(a.midX), f1(a.midY)];
       rows.push('<tr class="sel" data-ab="' + idx + '">' + v.map((x, i) => cell(x, i)).join("") + "</tr>");
     });
     $("count").textContent = r.asBuiltOnly.length + " as-built objects with no proposed counterpart";
@@ -428,7 +425,7 @@ $("copy").addEventListener("click", copyExcel);
 $("csv").addEventListener("click", () => { if (result) download(stem() + ".csv", C.itemsCsv(result), "text/csv"); });
 $("report").addEventListener("click", () => { if (result) download(stem() + ".html", C.htmlReport(result, result.meta), "text/html"); });
 $("uncolor").addEventListener("click", uncolor);
-for (const id of ["tol", "complete", "anymatch"]) $(id).addEventListener("change", () => { $("complete-wrap").hidden = $("anymatch").checked; if (result && !busy) compareOnly(); });
+$("tol").addEventListener("change", () => { if (result && !busy) compareOnly(); });
 $("units").addEventListener("change", () => { cache.clear(); result = null; $("tiles").hidden = true; $("res-card").hidden = true; });
 for (const id of ["m-proposed", "m-asbuilt"]) $(id).addEventListener("change", () => { uncolor(); result = null; $("tiles").hidden = true; $("res-card").hidden = true; $("cat-card").hidden = true; });
 init().catch(err => { $("view-connecting").textContent = "Could not connect to Trimble Connect: " + err.message; });
