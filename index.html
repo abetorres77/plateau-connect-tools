@@ -194,6 +194,24 @@
     </div>
   </div>
 
+  <div id="view-completion">
+    <div class="card">
+      <h2>Completion &mdash; proposed model vs as-built model</h2>
+      <p class="muted">Pick the proposed (design) model and the as-built model loaded in the <strong>3D Viewer</strong>. The tool matches every as-built pipe and structure to the design by name, then by location, and reports percent complete: overall, pipe LF installed, structures set, model-to-model, and a breakdown by layer and pipe size. Click a row to select the objects in the viewer; export CSV or an HTML report.</p>
+      <p>Because it reads the models in the viewer, the tool runs inside the 3D Viewer rather than on this page:</p>
+      <ol class="steps">
+        <li>Open the 3D Viewer and load both models (design and as-built).</li>
+        <li>Click the <strong>Plateau Tools</strong> icon (black &amp; gold) at the bottom of the viewer&#39;s left toolbar and pick <strong>Completion</strong>.</li>
+        <li>Check the two model pickers, then <strong>Compare</strong>.</li>
+      </ol>
+      <div class="row">
+        <button id="btn-open-viewer-completion">Open the 3D Viewer</button>
+        <span class="muted">Opens this project&#39;s 3D Viewer with Completion as the active tool.</span>
+      </div>
+      <div id="completion-status" class="muted"></div>
+    </div>
+  </div>
+
   <div id="view-launcher" style="display:none">
     <div class="card">
       <h2>Plateau Tools</h2>
@@ -201,6 +219,7 @@
       <div class="row"><button class="launch" data-tool="qto" style="width:100%;text-align:left">QTO Takeoff<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Pipe LF, structures, fittings, conduit and ductbank from the loaded models</span></button></div>
       <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Find points by number or description and zoom to them</span></button></div>
       <div class="row"><button class="launch" data-tool="props" style="width:100%;text-align:left">Object Properties<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Description, material, size, layer, elevations and coordinates of the selected objects</span></button></div>
+      <div class="row"><button class="launch" data-tool="completion" style="width:100%;text-align:left">Completion<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Percent complete: proposed model vs as-built model, by pipe length and structure count</span></button></div>
     </div>
   </div>
 
@@ -227,7 +246,7 @@ const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
 
 function show(view) {
-  for (const v of ["connecting", "extractor", "convert", "qto", "points", "props", "about", "launcher"]) {
+  for (const v of ["connecting", "extractor", "convert", "qto", "points", "props", "completion", "about", "launcher"]) {
     $("view-" + v).style.display = (v === view) ? "block" : "none";
   }
 }
@@ -250,6 +269,7 @@ async function init() {
       else if (cmd === "qto") show("qto");
       else if (cmd === "points") show("points");
       else if (cmd === "props") show("props");
+      else if (cmd === "completion") show("completion");
       else show("extractor");
     } else if (event === "extension.accessToken") {
       const t = tokenFrom(args && args.data !== undefined ? args.data : args);
@@ -274,7 +294,7 @@ async function init() {
     // the project page's "Open the 3D Viewer" buttons pre-select a tool through localStorage.
     let tool = "menu";
     try { tool = localStorage.getItem("plateau:viewerTool") || "menu"; localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ }
-    if (tool === "qto" || tool === "points" || tool === "props") { location.replace("./" + tool + ".html?v=" + Date.now()); return; }
+    if (tool === "qto" || tool === "points" || tool === "props" || tool === "completion") { location.replace("./" + tool + ".html?v=" + Date.now()); return; }
     show("launcher");
     return;
   }
@@ -288,6 +308,7 @@ async function init() {
       { title: "Point Extractor", icon: ICON, command: "extract" },
       { title: "Point Search", icon: ICON, command: "points" },
       { title: "Object Properties", icon: ICON, command: "props" },
+      { title: "Completion", icon: ICON, command: "completion" },
       { title: "File Converter", icon: ICON, command: "convert" },
       { title: "QTO Takeoff", icon: ICON, command: "qto" },
       { title: "About", icon: ICON, command: "about" }
@@ -703,6 +724,7 @@ $("btn-open-viewer").addEventListener("click", () => openViewer("qto", $("qto-st
 for (const b of document.querySelectorAll("button.launch")) b.addEventListener("click", () => location.replace("./" + b.dataset.tool + ".html?v=" + Date.now()));
 $("btn-open-viewer-points").addEventListener("click", () => openViewer("points", $("points-status")));
 $("btn-open-viewer-props").addEventListener("click", () => openViewer("props", $("props-status")));
+$("btn-open-viewer-completion").addEventListener("click", () => openViewer("completion", $("completion-status")));
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
 $("btn-tflx").addEventListener("click", downloadTflx);
