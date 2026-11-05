@@ -237,7 +237,7 @@ export function textSummary(r, meta) {
   L.push("As-built : " + (meta.asBuiltName || "") + "  (" + r.asBuiltCount + " objects)");
   L.push("Tolerance: " + r.options.toleranceFt + " ft   " + (r.options.matchIsComplete ? "Matched pipe = complete (length differences not counted)" : "Pipe complete at: " + r.options.completePct + "% of design length"));
   L.push("");
-  L.push("OVERALL COMPLETION (weighted by item, pipes pro-rated by length): " + pct(pctWeighted(r.overall)));
+  L.push("OVERALL COMPLETION (weighted by item" + (r.options.matchIsComplete ? "" : ", pipes pro-rated by length") + "): " + pct(pctWeighted(r.overall)));
   L.push("  Items complete " + r.overall.complete + " / " + r.overall.count + " (" + pct(pctByCount(r.overall)) + "), partial " + r.overall.partial + ", not started " + r.overall.notStarted);
   L.push("  Pipe length installed " + lenF(r.pipes.installedLen) + " / " + lenF(r.pipes.proposedLen) + " LF (" + pct(pctByLength(r.pipes)) + ")");
   L.push("  Structures/other complete " + r.points.complete + " / " + r.points.count + " (" + pct(pctByCount(r.points)) + ")");
