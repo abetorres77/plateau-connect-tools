@@ -1,6 +1,6 @@
 // completion-core.js - proposed vs as-built completion logic shared by completion.html (Trimble Connect 3D Viewer tool)
 // and the harness. Pure functions, no DOM. Mirrors ModelCompletion (the desktop exe) so both give the same numbers.
-export const VERSION = "v2026.11.05d";
+export const VERSION = "v2026.11.05e";
 
 const GROUP_TYPES = /^(file|layer|lcoapartition|block|insert|category|family|type|levels?:?.*|group|collection|)$/i;
 const GEOM_TYPES = /^(pipe|pressure pipe|structure|fitting|appurtenance|3d solid|solid)$/i;
@@ -161,14 +161,14 @@ export const pctByLength = g => g.proposedLen > 0 ? Math.min(100, 100 * g.instal
 const sizeSort = s => { const m = String(s).match(/^(\d+(\.\d+)?)/); return m ? parseFloat(m[1]) : 1e9; };
 
 export function compare(proposed, asBuilt, opt) {
-  const tol = opt.toleranceFt || 3, completePct = opt.completePct || 95, inc = opt.includedCategories || null;
-  const matchIsComplete = opt.matchIsComplete !== false;   // default: any matched pipe is complete, length differences are not counted
+  const tol = opt.toleranceFt || 3, inc = opt.includedCategories || null;
   const scope = [], excluded = [];
   for (const p of proposed) (inc && !inc.has(p.category) ? excluded : scope).push(p);
   const results = new Map(), items = [];
-  for (const p of scope) { const r = { proposed: p, asBuilt: [], method: "", proposedLen: p.isPipeLike && !isNaN(p.len) ? p.len : 0, installedLen: 0, asBuiltLen: 0, progress: 0, status: "Not Started", dist: NaN }; results.set(p, r); items.push(r); }
+  for (const p of scope) { const r = { proposed: p, asBuilt: [], method: "", proposedLen: p.isPipeLike && !isNaN(p.len) ? p.len : 0, installedLen: 0, progress: 0, status: "Not Started", dist: NaN }; results.set(p, r); items.push(r); }
   const used = new Set();
 
+  // pass 1: same name (and kind), close enough to be the same object
   const byName = new Map();
   for (const p of scope) { if (!p.nameKey) continue; const k = typeGroup(p) + "|" + p.nameKey; if (!byName.has(k)) byName.set(k, []); byName.get(k).push(p); }
   for (const a of asBuilt) {
@@ -178,6 +178,7 @@ export function compare(proposed, asBuilt, opt) {
     for (const p of cands) { const d = distance(p, a); if (d <= nameAllowance(p, tol) && d < bestD) { bestD = d; best = p; } }
     if (best) { const r = results.get(best); r.asBuilt.push(a); r.method = "Name"; r.dist = isNaN(r.dist) ? bestD : Math.max(r.dist, bestD); used.add(a); }
   }
+  // pass 2: location for whatever is left
   const pipes = scope.filter(p => p.isPipeLike && p.hasEnds), points = scope.filter(p => !p.isPipeLike && p.hasLocation);
   for (const a of asBuilt) {
     if (used.has(a) || !a.hasLocation) continue;
@@ -191,13 +192,10 @@ export function compare(proposed, asBuilt, opt) {
   }
   const asBuiltOnly = asBuilt.filter(a => !used.has(a));
 
+  // a matched object is complete; lengths are never compared (design length only weights the LF figures)
   for (const r of items) {
-    if (r.proposed.isPipeLike && r.proposedLen > 0) {
-      for (const a of r.asBuilt) r.asBuiltLen += isNaN(a.len) ? 0 : a.len;
-      if (!r.asBuilt.length) { r.status = "Not Started"; r.installedLen = 0; }
-      else if (matchIsComplete) { r.status = "Complete"; r.progress = 1; r.installedLen = r.proposedLen; }   // credit the whole run
-      else { r.installedLen = r.asBuiltLen; r.progress = Math.min(1, r.installedLen / r.proposedLen); if (r.progress * 100 >= completePct) { r.status = "Complete"; r.progress = 1; } else r.status = "Partial"; }
-    } else { r.progress = r.asBuilt.length ? 1 : 0; r.status = r.asBuilt.length ? "Complete" : "Not Started"; }
+    const done = r.asBuilt.length > 0;
+    r.progress = done ? 1 : 0; r.status = done ? "Complete" : "Not Started"; r.installedLen = done ? r.proposedLen : 0;
   }
   const overall = newGroup("All included items"), pipesG = newGroup("Pipes"), pointsG = newGroup("Structures / fittings / other");
   const cat = new Map(), size = new Map();
@@ -207,19 +205,17 @@ export function compare(proposed, asBuilt, opt) {
     if (r.proposed.isPipeLike) { if (!size.has(r.proposed.sizeKey)) size.set(r.proposed.sizeKey, newGroup(r.proposed.sizeKey)); addTo(size.get(r.proposed.sizeKey), r); }
   }
   const res = {
-    options: { toleranceFt: tol, completePct, matchIsComplete, includedCategories: inc }, items, asBuiltOnly, excluded,
+    options: { toleranceFt: tol, includedCategories: inc }, items, asBuiltOnly, excluded,
     overall, pipes: pipesG, points: pointsG,
     byCategory: [...cat.values()].sort((a, b) => a.key.localeCompare(b.key)),
     bySize: [...size.values()].sort((a, b) => sizeSort(a.key) - sizeSort(b.key) || a.key.localeCompare(b.key)),
     proposedCount: proposed.length, asBuiltCount: asBuilt.length,
-    modelProposedCount: scope.length, modelAsBuiltCount: asBuilt.length,
-    modelProposedLen: scope.reduce((s, p) => s + (p.isPipeLike && !isNaN(p.len) ? p.len : 0), 0),
-    modelAsBuiltLen: asBuilt.reduce((s, a) => s + (a.isPipeLike && !isNaN(a.len) ? a.len : 0), 0)
+    modelProposedCount: scope.length, modelAsBuiltCount: asBuilt.length
   };
   res.modelPctByCount = res.modelProposedCount ? 100 * res.modelAsBuiltCount / res.modelProposedCount : NaN;
-  res.modelPctByLength = res.modelProposedLen > 0 ? 100 * res.modelAsBuiltLen / res.modelProposedLen : NaN;
   return res;
 }
+
 // ---------------- reporting ----------------
 export const pct = v => (v == null || isNaN(v)) ? "-" : v.toFixed(1) + "%";
 export const lenF = v => (v == null || isNaN(v)) ? "" : v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -235,78 +231,76 @@ export function textSummary(r, meta) {
   const L = [];
   L.push("Proposed : " + (meta.proposedName || "") + "  (" + r.proposedCount + " objects, " + r.items.length + " in scope)");
   L.push("As-built : " + (meta.asBuiltName || "") + "  (" + r.asBuiltCount + " objects)");
-  L.push("Tolerance: " + r.options.toleranceFt + " ft   " + (r.options.matchIsComplete ? "Matched pipe = complete (length differences not counted)" : "Pipe complete at: " + r.options.completePct + "% of design length"));
+  L.push("Tolerance: " + r.options.toleranceFt + " ft   (a matched object is complete; lengths are not compared)");
   L.push("");
-  L.push("OVERALL COMPLETION (weighted by item" + (r.options.matchIsComplete ? "" : ", pipes pro-rated by length") + "): " + pct(pctWeighted(r.overall)));
-  L.push("  Items complete " + r.overall.complete + " / " + r.overall.count + " (" + pct(pctByCount(r.overall)) + "), partial " + r.overall.partial + ", not started " + r.overall.notStarted);
-  L.push("  Pipe length installed " + lenF(r.pipes.installedLen) + " / " + lenF(r.pipes.proposedLen) + " LF (" + pct(pctByLength(r.pipes)) + ")");
+  L.push("OVERALL COMPLETION (by item count): " + pct(pctByCount(r.overall)));
+  L.push("  Items complete " + r.overall.complete + " / " + r.overall.count + ", not started " + r.overall.notStarted);
+  L.push("  Pipe complete by design length " + lenF(r.pipes.installedLen) + " / " + lenF(r.pipes.proposedLen) + " LF (" + pct(pctByLength(r.pipes)) + ")");
   L.push("  Structures/other complete " + r.points.complete + " / " + r.points.count + " (" + pct(pctByCount(r.points)) + ")");
   L.push("  As-built objects with no proposed counterpart: " + r.asBuiltOnly.length);
   L.push("");
-  L.push("MODEL-TO-MODEL (whole as-built model as a share of the proposed model, no matching)");
-  L.push("  By object count : " + r.modelAsBuiltCount + " / " + r.modelProposedCount + " objects (" + pct(r.modelPctByCount) + ")");
-  L.push("  By pipe length  : " + lenF(r.modelAsBuiltLen) + " / " + lenF(r.modelProposedLen) + " LF (" + pct(r.modelPctByLength) + ")");
+  L.push("MODEL-TO-MODEL: as-built model holds " + r.modelAsBuiltCount + " of the " + r.modelProposedCount + " proposed objects (" + pct(r.modelPctByCount) + ")");
   L.push("");
   L.push("BY CATEGORY");
-  for (const g of r.byCategory) L.push("  " + g.key.padEnd(40) + " " + g.complete + "/" + g.count + " complete, " + g.partial + " partial" + (g.proposedLen > 0 ? ", " + lenF(g.installedLen) + "/" + lenF(g.proposedLen) + " LF (" + pct(pctByLength(g)) + ")" : "") + "  weighted " + pct(pctWeighted(g)));
+  for (const g of r.byCategory) L.push("  " + g.key.padEnd(40) + " " + g.complete + "/" + g.count + " complete (" + pct(pctByCount(g)) + ")" + (g.proposedLen > 0 ? ", " + lenF(g.installedLen) + "/" + lenF(g.proposedLen) + " LF (" + pct(pctByLength(g)) + ")" : ""));
   L.push("");
   L.push("BY PIPE SIZE");
-  for (const g of r.bySize) L.push("  " + g.key.padEnd(40) + " " + g.complete + "/" + g.count + " complete, " + g.partial + " partial, " + lenF(g.installedLen) + "/" + lenF(g.proposedLen) + " LF (" + pct(pctByLength(g)) + ")");
+  for (const g of r.bySize) L.push("  " + g.key.padEnd(40) + " " + g.complete + "/" + g.count + " complete, " + lenF(g.installedLen) + "/" + lenF(g.proposedLen) + " LF (" + pct(pctByLength(g)) + ")");
   return L.join("\n");
 }
 
-/** rows for Copy-for-Excel / summary CSV: [Group, Key, Items, Complete, Partial, Not started, % by count, % weighted, Proposed LF, Installed LF, % by length] */
+/** rows for Copy-for-Excel / summary CSV */
 export function summaryRows(r) {
-  const row = (grp, g) => [grp, g.key, g.count, g.complete, g.partial, g.notStarted, n2(pctByCount(g), 1), n2(pctWeighted(g), 1), n2(g.proposedLen, 2), n2(g.installedLen, 2), n2(pctByLength(g), 1)];
-  const rows = [["Group", "Key", "Items", "Complete", "Partial", "Not Started", "Pct By Count", "Pct Weighted", "Proposed LF", "Installed LF", "Pct By Length"]];
+  const row = (grp, g) => [grp, g.key, g.count, g.complete, g.notStarted, n2(pctByCount(g), 1), n2(g.proposedLen, 2), n2(g.installedLen, 2), n2(pctByLength(g), 1)];
+  const rows = [["Group", "Key", "Items", "Complete", "Not Started", "Pct By Count", "Design LF", "Complete LF", "Pct By Length"]];
   rows.push(row("Overall", r.overall), row("Overall", r.pipes), row("Overall", r.points));
-  rows.push(["Model-to-model", "As-built model vs proposed model", r.modelProposedCount, r.modelAsBuiltCount, "", "", n2(r.modelPctByCount, 1), "", n2(r.modelProposedLen, 2), n2(r.modelAsBuiltLen, 2), n2(r.modelPctByLength, 1)]);
+  rows.push(["Model-to-model", "As-built objects vs proposed objects", r.modelProposedCount, r.modelAsBuiltCount, "", n2(r.modelPctByCount, 1), "", "", ""]);
   for (const g of r.byCategory) rows.push(row("Category", g));
   for (const g of r.bySize) rows.push(row("Pipe size", g));
   return rows;
 }
 
 export function itemsCsv(r) {
-  const L = ["Status,Type,Name,Description,Part Size,Layer,Network,Proposed LF,Credited LF,As-Built LF,Pct,Matched As-Built,Match Method,Match Dist ft,Start Structure,End Structure,Easting,Northing"];
+  const L = ["Status,Type,Name,Description,Part Size,Layer,Network,Design LF,Matched As-Built,Match Method,Match Dist ft,Start Structure,End Structure,Easting,Northing"];
   for (const it of r.items) {
     const p = it.proposed;
-    L.push([it.status, p.type, p.name, p.desc, p.partSize, p.layer, p.network, p.isPipeLike ? n2(it.proposedLen, 2) : "", p.isPipeLike ? n2(it.installedLen, 2) : "", p.isPipeLike ? n2(it.asBuiltLen, 2) : "", n2(it.progress * 100, 1),
+    L.push([it.status, p.type, p.name, p.desc, p.partSize, p.layer, p.network, p.isPipeLike ? n2(it.proposedLen, 2) : "",
       asBuiltNames(it), it.method, n2(it.dist, 2), startStruct(p), endStruct(p), n2(p.midX, 2), n2(p.midY, 2)].map(csvq).join(","));
   }
-  L.push(""); L.push("AS-BUILT ONLY (no proposed counterpart)"); L.push("Type,Name,Description,Part Size,Layer,LF,Easting,Northing");
-  for (const a of r.asBuiltOnly) L.push([a.type, a.name, a.desc, a.partSize, a.layer, a.isPipeLike ? n2(a.len, 2) : "", n2(a.midX, 2), n2(a.midY, 2)].map(csvq).join(","));
+  L.push(""); L.push("AS-BUILT ONLY (no proposed counterpart)"); L.push("Type,Name,Description,Part Size,Layer,Easting,Northing");
+  for (const a of r.asBuiltOnly) L.push([a.type, a.name, a.desc, a.partSize, a.layer, n2(a.midX, 2), n2(a.midY, 2)].map(csvq).join(","));
   return L.join("\r\n");
 }
 
 export function htmlReport(r, meta) {
   const bar = v => isNaN(v) ? '<span class="muted">n/a</span>' : '<div class="bar"><div class="fill" style="width:' + Math.round(Math.max(0, Math.min(100, v))) + '%"></div><span>' + pct(v) + "</span></div>";
   const tile = (t, big, sub) => '<div class="tile"><div class="sub">' + esc(t) + '</div><div class="big">' + esc(big) + '</div><div class="sub">' + esc(sub) + "</div></div>";
-  const grow = g => "<tr><td>" + esc(g.key) + '</td><td class=num>' + g.count + '</td><td class=num>' + g.complete + '</td><td class=num>' + g.partial + '</td><td class=num>' + g.notStarted + '</td><td class=num>' + (g.proposedLen > 0 ? lenF(g.proposedLen) : "") + '</td><td class=num>' + (g.proposedLen > 0 ? lenF(g.installedLen) : "") + "</td><td>" + bar(pctByLength(g)) + "</td><td>" + bar(pctWeighted(g)) + "</td></tr>";
-  const ghead = k => "<tr><th>" + k + "</th><th class=num>Items</th><th class=num>Complete</th><th class=num>Partial</th><th class=num>Not started</th><th class=num>Proposed LF</th><th class=num>Installed LF</th><th>% by length</th><th>% weighted</th></tr>";
+  const grow = g => "<tr><td>" + esc(g.key) + '</td><td class=num>' + g.count + '</td><td class=num>' + g.complete + '</td><td class=num>' + g.notStarted + "</td><td>" + bar(pctByCount(g)) + '</td><td class=num>' + (g.proposedLen > 0 ? lenF(g.proposedLen) : "") + '</td><td class=num>' + (g.proposedLen > 0 ? lenF(g.installedLen) : "") + "</td><td>" + (g.proposedLen > 0 ? bar(pctByLength(g)) : "") + "</td></tr>";
+  const ghead = k => "<tr><th>" + k + "</th><th class=num>Items</th><th class=num>Complete</th><th class=num>Not started</th><th>% complete</th><th class=num>Design LF</th><th class=num>Complete LF</th><th>% by length</th></tr>";
   let h = '<!doctype html><html><head><meta charset="utf-8"><title>Model Completion Report</title><style>' +
     "body{font-family:Segoe UI,Arial,sans-serif;margin:24px;color:#1b1f23;background:#fff}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 8px;border-bottom:1px solid #d0d7de;padding-bottom:4px}" +
     ".meta{color:#57606a;font-size:13px}table{border-collapse:collapse;font-size:13px;margin-top:6px}th,td{border:1px solid #d8dee4;padding:4px 8px;text-align:left;vertical-align:top}th{background:#f6f8fa}td.num,th.num{text-align:right}" +
     ".tiles{display:flex;gap:16px;flex-wrap:wrap;margin:16px 0}.tile{border:1px solid #d0d7de;border-radius:8px;padding:12px 18px;min-width:220px}.tile .big{font-size:34px;font-weight:600}.tile .sub{color:#57606a;font-size:13px}" +
     ".bar{position:relative;background:#eaeef2;border-radius:4px;height:18px;min-width:120px}.bar .fill{background:#2da44e;height:100%;border-radius:4px}.bar span{position:absolute;left:6px;top:0;font-size:12px;line-height:18px}" +
-    ".Complete{background:#dafbe1}.Partial{background:#fff8c5}.NotStarted{background:#ffebe9}.muted{color:#8c959f}</style></head><body>";
-  h += "<h1>Model Completion Report</h1><div class=meta>Generated " + esc(meta.generated || new Date().toLocaleString()) + " from Trimble Connect<br>Proposed: " + esc(meta.proposedName) + " (" + r.proposedCount + " objects, " + r.items.length + " in scope)<br>As-built: " + esc(meta.asBuiltName) + " (" + r.asBuiltCount + " objects)<br>Match tolerance " + r.options.toleranceFt + " ft; " + (r.options.matchIsComplete ? "a matched pipe counts as complete regardless of length." : "pipes count as complete at " + r.options.completePct + "% of proposed length.") + "</div>";
-  h += '<div class="tiles">' + tile("Overall completion", pct(pctWeighted(r.overall)), r.overall.complete + " of " + r.overall.count + " items complete, " + r.overall.partial + " partial") +
-    tile("Pipe installed by length", pct(pctByLength(r.pipes)), lenF(r.pipes.installedLen) + " of " + lenF(r.pipes.proposedLen) + " LF") +
+    ".Complete{background:#dafbe1}.NotStarted{background:#ffebe9}.muted{color:#8c959f}</style></head><body>";
+  h += "<h1>Model Completion Report</h1><div class=meta>Generated " + esc(meta.generated || new Date().toLocaleString()) + " from Trimble Connect<br>Proposed: " + esc(meta.proposedName) + " (" + r.proposedCount + " objects, " + r.items.length + " in scope)<br>As-built: " + esc(meta.asBuiltName) + " (" + r.asBuiltCount + " objects)<br>Match tolerance " + r.options.toleranceFt + " ft. A matched object is complete; lengths are not compared.</div>";
+  h += '<div class="tiles">' + tile("Overall completion", pct(pctByCount(r.overall)), r.overall.complete + " of " + r.overall.count + " items complete") +
+    tile("Pipe complete by design length", pct(pctByLength(r.pipes)), lenF(r.pipes.installedLen) + " of " + lenF(r.pipes.proposedLen) + " LF") +
     tile("Structures / other", pct(pctByCount(r.points)), r.points.complete + " of " + r.points.count + " complete") +
-    tile("Model-to-model (as-built vs proposed)", pct(r.modelPctByCount), r.modelAsBuiltCount + " of " + r.modelProposedCount + " objects; " + lenF(r.modelAsBuiltLen) + " of " + lenF(r.modelProposedLen) + " LF (" + pct(r.modelPctByLength) + ")") + "</div>";
+    tile("Model-to-model", pct(r.modelPctByCount), r.modelAsBuiltCount + " as-built of " + r.modelProposedCount + " proposed objects") + "</div>";
   h += "<h2>By category</h2><table>" + ghead("Category") + r.byCategory.map(grow).join("") + "</table>";
   h += "<h2>By pipe size</h2><table>" + ghead("Size") + r.bySize.map(grow).join("") + "</table>";
-  h += "<h2>Items (" + r.items.length + ")</h2><table><tr><th>Status</th><th>Type</th><th>Name</th><th>Description</th><th>Layer</th><th class=num>Proposed LF</th><th class=num>As-built LF</th><th class=num>%</th><th>Matched as-built</th><th>Match</th><th class=num>Dist ft</th><th>From</th><th>To</th></tr>";
+  h += "<h2>Items (" + r.items.length + ")</h2><table><tr><th>Status</th><th>Type</th><th>Name</th><th>Description</th><th>Layer</th><th class=num>Design LF</th><th>Matched as-built</th><th>Match</th><th class=num>Dist ft</th><th>From</th><th>To</th></tr>";
   const sorted = [...r.items].sort((a, b) => a.status.localeCompare(b.status) || a.proposed.category.localeCompare(b.proposed.category) || a.proposed.name.localeCompare(b.proposed.name));
   for (const it of sorted) {
     const p = it.proposed;
-    h += '<tr class="' + it.status.replace(" ", "") + '"><td>' + esc(it.status) + "</td><td>" + esc(p.type) + "</td><td>" + esc(p.name) + "</td><td>" + esc(p.desc) + "</td><td>" + esc(p.layer) + "</td><td class=num>" + (p.isPipeLike ? lenF(it.proposedLen) : "") + "</td><td class=num>" + (p.isPipeLike && it.asBuilt.length ? lenF(it.asBuiltLen) : "") + "</td><td class=num>" + n2(it.progress * 100, 0) + "</td><td>" + esc(asBuiltNames(it)) + "</td><td>" + esc(it.method) + "</td><td class=num>" + n2(it.dist, 1) + "</td><td>" + esc(startStruct(p)) + "</td><td>" + esc(endStruct(p)) + "</td></tr>";
+    h += '<tr class="' + it.status.replace(" ", "") + '"><td>' + esc(it.status) + "</td><td>" + esc(p.type) + "</td><td>" + esc(p.name) + "</td><td>" + esc(p.desc) + "</td><td>" + esc(p.layer) + "</td><td class=num>" + (p.isPipeLike ? lenF(it.proposedLen) : "") + "</td><td>" + esc(asBuiltNames(it)) + "</td><td>" + esc(it.method) + "</td><td class=num>" + n2(it.dist, 1) + "</td><td>" + esc(startStruct(p)) + "</td><td>" + esc(endStruct(p)) + "</td></tr>";
   }
   h += "</table><h2>As-built objects with no proposed counterpart (" + r.asBuiltOnly.length + ")</h2>";
   if (!r.asBuiltOnly.length) h += "<p class=muted>None.</p>";
   else {
-    h += "<table><tr><th>Type</th><th>Name</th><th>Description</th><th>Layer</th><th class=num>LF</th><th class=num>Easting</th><th class=num>Northing</th></tr>";
-    for (const a of r.asBuiltOnly) h += "<tr><td>" + esc(a.type) + "</td><td>" + esc(a.name) + "</td><td>" + esc(a.desc) + "</td><td>" + esc(a.layer) + "</td><td class=num>" + (a.isPipeLike ? lenF(a.len) : "") + "</td><td class=num>" + n2(a.midX, 1) + "</td><td class=num>" + n2(a.midY, 1) + "</td></tr>";
+    h += "<table><tr><th>Type</th><th>Name</th><th>Description</th><th>Layer</th><th class=num>Easting</th><th class=num>Northing</th></tr>";
+    for (const a of r.asBuiltOnly) h += "<tr><td>" + esc(a.type) + "</td><td>" + esc(a.name) + "</td><td>" + esc(a.desc) + "</td><td>" + esc(a.layer) + "</td><td class=num>" + n2(a.midX, 1) + "</td><td class=num>" + n2(a.midY, 1) + "</td></tr>";
     h += "</table>";
   }
   if (r.excluded.length) h += "<p class=meta>" + r.excluded.length + " proposed objects were excluded by the category filter.</p>";
