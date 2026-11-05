@@ -132,7 +132,7 @@
       <div class="row" id="item-filter" hidden>
         <select id="f-status"><option value="">All statuses</option><option>Complete</option><option>Partial</option><option>Not Started</option></select>
         <input type="search" id="f-text" placeholder="Find name, size, structure…" style="flex:1;min-width:120px">
-        <label class="inline"><input type="checkbox" id="zoom"> Zoom on click</label>
+        <span class="muted">Click a row: the viewer selects the objects and zooms to them.</span>
       </div>
       <div class="muted" id="count"></div>
       <div class="table-scroll"><table id="tbl"><thead></thead><tbody></tbody></table></div>
@@ -143,7 +143,7 @@
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 import * as C from "./completion-core.js";
 
-const VERSION = C.VERSION;
+const VERSION = C.VERSION + "b";
 const log = (...a) => console.log("[PEICompletion]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -373,7 +373,8 @@ async function selectRow(tr) {
   tr.classList.add("active");
   try {
     await API.viewer.setSelection({ modelObjectIds: groups }, "set");
-    if ($("zoom").checked) await API.viewer.setCamera({ modelObjectIds: groups }, { animationTime: 400 });
+    // zoom to the highlighted object(s): fit the camera to the selection
+    try { await API.viewer.setCamera({ modelObjectIds: groups }, { animationTime: 500 }); } catch (e) { log("setCamera", e); }
   } catch (e) { log("select", e); }
 }
 
