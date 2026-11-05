@@ -109,6 +109,7 @@
         <button class="small ghost" id="copy" disabled>Copy for Excel</button>
         <button class="small ghost" id="csv" disabled>CSV</button>
         <button class="small ghost" id="report" disabled>HTML report</button>
+        <button class="small ghost" id="uncolor" disabled title="Put the as-built model back to its normal colors">Reset colors</button>
       </div>
       <div id="status"></div>
     </div>
@@ -143,7 +144,7 @@
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 import * as C from "./completion-core.js";
 
-const VERSION = C.VERSION + "b";
+const VERSION = C.VERSION + "c";
 const log = (...a) => console.log("[PEICompletion]", ...a);
 const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
@@ -172,6 +173,19 @@ const CHUNK = 250;
 let API = null, models = [], knownIds = new Set();
 const cache = new Map();      // modelId -> { items, count, name }
 let result = null, tab = "cat", busy = false;
+let colored = null;           // { modelId, ids } of the model currently painted red
+const AS_BUILT_COLOR = "#e02020";
+
+// paint the as-built model red so it stands out from the design; "reset" puts the original colors back
+async function colorModel(entry, color) {
+  if (!entry || !API.viewer.setObjectState) return;
+  const sel = { modelObjectIds: [{ modelId: entry.modelId, objectRuntimeIds: entry.ids }] };
+  try { await API.viewer.setObjectState(sel, { color }); } catch (e) { log("setObjectState", e); }
+}
+async function uncolor() {
+  if (colored) { await colorModel(colored, "reset"); colored = null; }
+  $("uncolor").disabled = true;
+}
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 async function init() {
@@ -252,7 +266,7 @@ async function readModel(m, label) {
     }
   }
   const items = C.parseObjects(objs, { modelId: found.modelId, unitM: UNIT_M[$("units").value], boxes });
-  const entry = { items, count: objs.length, name: m.name, modelId: found.modelId };
+  const entry = { items, count: objs.length, name: m.name, modelId: found.modelId, ids: found.ids };
   cache.set(m.id, entry);
   return entry;
 }
@@ -279,6 +293,8 @@ async function run() {
   try {
     const mp = models.find(m => m.id === pid), ma = models.find(m => m.id === aid);
     const P = await readModel(mp, "proposed"), A = await readModel(ma, "as-built");
+    if (colored && colored.modelId !== A.modelId) await uncolor();
+    await colorModel(A, AS_BUILT_COLOR); colored = A; $("uncolor").disabled = false;
     fillCategories(P.items);
     compareOnly();
   } catch (e) {
@@ -410,9 +426,10 @@ $("tbl").addEventListener("click", (ev) => { const tr = ev.target.closest("tr.se
 $("copy").addEventListener("click", copyExcel);
 $("csv").addEventListener("click", () => { if (result) download(stem() + ".csv", C.itemsCsv(result), "text/csv"); });
 $("report").addEventListener("click", () => { if (result) download(stem() + ".html", C.htmlReport(result, result.meta), "text/html"); });
+$("uncolor").addEventListener("click", uncolor);
 for (const id of ["tol", "complete"]) $(id).addEventListener("change", () => { if (result && !busy) compareOnly(); });
 $("units").addEventListener("change", () => { cache.clear(); result = null; $("tiles").hidden = true; $("res-card").hidden = true; });
-for (const id of ["m-proposed", "m-asbuilt"]) $(id).addEventListener("change", () => { result = null; $("tiles").hidden = true; $("res-card").hidden = true; $("cat-card").hidden = true; });
+for (const id of ["m-proposed", "m-asbuilt"]) $(id).addEventListener("change", () => { uncolor(); result = null; $("tiles").hidden = true; $("res-card").hidden = true; $("cat-card").hidden = true; });
 init().catch(err => { $("view-connecting").textContent = "Could not connect to Trimble Connect: " + err.message; });
 </script>
 </body>
