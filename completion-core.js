@@ -1,9 +1,13 @@
 // completion-core.js - proposed vs as-built completion logic shared by completion.html (Trimble Connect 3D Viewer tool)
 // and the harness. Pure functions, no DOM. Mirrors ModelCompletion (the desktop exe) so both give the same numbers.
-export const VERSION = "v2026.11.05e";
+export const VERSION = "v2026.11.06";
 
 const GROUP_TYPES = /^(file|layer|lcoapartition|block|insert|category|family|type|levels?:?.*|group|collection|)$/i;
 const GEOM_TYPES = /^(pipe|pressure pipe|structure|fitting|appurtenance|3d solid|solid)$/i;
+const NETWORK_TYPES = /^(pipe|pressure pipe|structure)$/i;
+
+/** Only pipe-network objects count: pipes (incl. pressure pipes) and structures. Fittings, solids, blocks and layers are ignored. */
+export function isNetworkObject(m) { return NETWORK_TYPES.test(m.type) || (/^object$/i.test(m.type) && m.isPipeLike && m.hasEnds); }
 
 export function normalize(s) {
   if (s == null) return "";
@@ -162,8 +166,9 @@ const sizeSort = s => { const m = String(s).match(/^(\d+(\.\d+)?)/); return m ? 
 
 export function compare(proposed, asBuilt, opt) {
   const tol = opt.toleranceFt || 3, inc = opt.includedCategories || null;
-  const scope = [], excluded = [];
-  for (const p of proposed) (inc && !inc.has(p.category) ? excluded : scope).push(p);
+  const scope = [], excluded = [], ignored = proposed.filter(p => !isNetworkObject(p));
+  for (const p of proposed) { if (!isNetworkObject(p)) continue; (inc && !inc.has(p.category) ? excluded : scope).push(p); }
+  const asBuiltAll = asBuilt; asBuilt = asBuilt.filter(isNetworkObject);
   const results = new Map(), items = [];
   for (const p of scope) { const r = { proposed: p, asBuilt: [], method: "", proposedLen: p.isPipeLike && !isNaN(p.len) ? p.len : 0, installedLen: 0, progress: 0, status: "Not Started", dist: NaN }; results.set(p, r); items.push(r); }
   const used = new Set();
@@ -197,7 +202,7 @@ export function compare(proposed, asBuilt, opt) {
     const done = r.asBuilt.length > 0;
     r.progress = done ? 1 : 0; r.status = done ? "Complete" : "Not Started"; r.installedLen = done ? r.proposedLen : 0;
   }
-  const overall = newGroup("All included items"), pipesG = newGroup("Pipes"), pointsG = newGroup("Structures / fittings / other");
+  const overall = newGroup("All included items"), pipesG = newGroup("Pipes"), pointsG = newGroup("Structures");
   const cat = new Map(), size = new Map();
   for (const r of items) {
     addTo(overall, r); addTo(r.proposed.isPipeLike ? pipesG : pointsG, r);
@@ -205,11 +210,11 @@ export function compare(proposed, asBuilt, opt) {
     if (r.proposed.isPipeLike) { if (!size.has(r.proposed.sizeKey)) size.set(r.proposed.sizeKey, newGroup(r.proposed.sizeKey)); addTo(size.get(r.proposed.sizeKey), r); }
   }
   const res = {
-    options: { toleranceFt: tol, includedCategories: inc }, items, asBuiltOnly, excluded,
+    options: { toleranceFt: tol, includedCategories: inc }, items, asBuiltOnly, excluded, ignored, asBuiltIgnored: asBuiltAll.length - asBuilt.length,
     overall, pipes: pipesG, points: pointsG,
     byCategory: [...cat.values()].sort((a, b) => a.key.localeCompare(b.key)),
     bySize: [...size.values()].sort((a, b) => sizeSort(a.key) - sizeSort(b.key) || a.key.localeCompare(b.key)),
-    proposedCount: proposed.length, asBuiltCount: asBuilt.length,
+    proposedCount: proposed.length, asBuiltCount: asBuiltAll.length,
     modelProposedCount: scope.length, modelAsBuiltCount: asBuilt.length
   };
   res.modelPctByCount = res.modelProposedCount ? 100 * res.modelAsBuiltCount / res.modelProposedCount : NaN;
@@ -236,8 +241,9 @@ export function textSummary(r, meta) {
   L.push("OVERALL COMPLETION (by item count): " + pct(pctByCount(r.overall)));
   L.push("  Items complete " + r.overall.complete + " / " + r.overall.count + ", not started " + r.overall.notStarted);
   L.push("  Pipe complete by design length " + lenF(r.pipes.installedLen) + " / " + lenF(r.pipes.proposedLen) + " LF (" + pct(pctByLength(r.pipes)) + ")");
-  L.push("  Structures/other complete " + r.points.complete + " / " + r.points.count + " (" + pct(pctByCount(r.points)) + ")");
+  L.push("  Structures complete " + r.points.complete + " / " + r.points.count + " (" + pct(pctByCount(r.points)) + ")");
   L.push("  As-built objects with no proposed counterpart: " + r.asBuiltOnly.length);
+  L.push("  Ignored (not pipes or structures): " + r.ignored.length + " proposed, " + r.asBuiltIgnored + " as-built");
   L.push("");
   L.push("MODEL-TO-MODEL: as-built model holds " + r.modelAsBuiltCount + " of the " + r.modelProposedCount + " proposed objects (" + pct(r.modelPctByCount) + ")");
   L.push("");
@@ -286,7 +292,7 @@ export function htmlReport(r, meta) {
   h += "<h1>Model Completion Report</h1><div class=meta>Generated " + esc(meta.generated || new Date().toLocaleString()) + " from Trimble Connect<br>Proposed: " + esc(meta.proposedName) + " (" + r.proposedCount + " objects, " + r.items.length + " in scope)<br>As-built: " + esc(meta.asBuiltName) + " (" + r.asBuiltCount + " objects)<br>Match tolerance " + r.options.toleranceFt + " ft. A matched object is complete; lengths are not compared.</div>";
   h += '<div class="tiles">' + tile("Overall completion", pct(pctByCount(r.overall)), r.overall.complete + " of " + r.overall.count + " items complete") +
     tile("Pipe complete by design length", pct(pctByLength(r.pipes)), lenF(r.pipes.installedLen) + " of " + lenF(r.pipes.proposedLen) + " LF") +
-    tile("Structures / other", pct(pctByCount(r.points)), r.points.complete + " of " + r.points.count + " complete") +
+    tile("Structures", pct(pctByCount(r.points)), r.points.complete + " of " + r.points.count + " complete") +
     tile("Model-to-model", pct(r.modelPctByCount), r.modelAsBuiltCount + " as-built of " + r.modelProposedCount + " proposed objects") + "</div>";
   h += "<h2>By category</h2><table>" + ghead("Category") + r.byCategory.map(grow).join("") + "</table>";
   h += "<h2>By pipe size</h2><table>" + ghead("Size") + r.bySize.map(grow).join("") + "</table>";
@@ -303,6 +309,7 @@ export function htmlReport(r, meta) {
     for (const a of r.asBuiltOnly) h += "<tr><td>" + esc(a.type) + "</td><td>" + esc(a.name) + "</td><td>" + esc(a.desc) + "</td><td>" + esc(a.layer) + "</td><td class=num>" + n2(a.midX, 1) + "</td><td class=num>" + n2(a.midY, 1) + "</td></tr>";
     h += "</table>";
   }
-  if (r.excluded.length) h += "<p class=meta>" + r.excluded.length + " proposed objects were excluded by the category filter.</p>";
+  h += "<p class=meta>Only pipes and structures count. Ignored: " + r.ignored.length + " proposed and " + r.asBuiltIgnored + " as-built objects that are not pipes or structures (fittings, solids, blocks)."
+    + (r.excluded.length ? " " + r.excluded.length + " proposed objects were excluded by the category filter." : "") + "</p>";
   return h + "</body></html>";
 }
