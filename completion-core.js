@@ -1,12 +1,20 @@
 // completion-core.js - proposed vs as-built completion logic shared by completion.html (Trimble Connect 3D Viewer tool)
 // and the harness. Pure functions, no DOM. Mirrors ModelCompletion (the desktop exe) so both give the same numbers.
-export const VERSION = "v2026.11.06";
+// Reads Civil 3D (NWC/DWG) models through their Civil3D properties and Revit (NWC) models through the element nodes
+// that carry an "Element" property set (build v2026.11.06b).
+export const VERSION = "v2026.11.06b";
 
 const GROUP_TYPES = /^(file|layer|lcoapartition|block|insert|category|family|type|levels?:?.*|group|collection|)$/i;
 const GEOM_TYPES = /^(pipe|pressure pipe|structure|fitting|appurtenance|3d solid|solid)$/i;
 const NETWORK_TYPES = /^(pipe|pressure pipe|structure)$/i;
+// Revit categories (Element · Category) and what they count as
+const REVIT_PIPE = /^(pipes|pipe placeholders|conduits|ducts)$/i;
+const REVIT_FITTING = /^(pipe fittings|pipe accessories|conduit fittings|duct fittings)$/i;
+const REVIT_INSULATION = /^(pipe insulations?|duct insulations?|duct linings?)$/i;
+export const REVIT_STRUCTURE = /^(generic models|mechanical equipment|plumbing fixtures|specialty equipment|structural foundations|site)$/i;
+const REVIT_IGNORE = /^(center ?lines?|lines|detail items|levels|grids|cameras|views|reference planes|imports in families)$/i;
 
-/** Only pipe-network objects count: pipes (incl. pressure pipes) and structures. Fittings, solids, blocks and layers are ignored. */
+/** Only pipe-network objects count: pipes (incl. pressure pipes) and structures. Fittings, insulation, centre lines, solids, blocks and layers are ignored. */
 export function isNetworkObject(m) { return NETWORK_TYPES.test(m.type) || (/^object$/i.test(m.type) && m.isPipeLike && m.hasEnds); }
 
 export function normalize(s) {
@@ -56,17 +64,117 @@ function num(flat, names, unitM) {
   return v;
 }
 
+// ---- Revit helpers: property pinned to its set (dozens of Revit sets carry a Name / Type / Category)
+const sget = (flat, set, name) => flat.get(set + " · " + name) || null;
+const sstr = (flat, set, name) => { const e = sget(flat, set, name); return e ? String(e.v) : ""; };
+function snum(flat, set, name, unitM) {
+  const e = sget(flat, set, name); if (!e) return NaN;
+  let v = e.v;
+  if (typeof v === "string") { const m = v.replace(/,/g, "").match(/-?\d+(\.\d+)?/); if (!m) return NaN; v = parseFloat(m[0]); }
+  if (typeof v !== "number" || isNaN(v)) return NaN;
+  return e.t === 0 ? v / 1000 / unitM : v;
+}
+/** Revit model = its objects carry an "Element" property set (Revit -> NWC -> TrimBIM). */
+export function isRevitModel(objs) { return (objs || []).some(op => (op.properties || []).some(ps => ps && ps.name === "Element")); }
+export function revitCategory(op) { return sstr(flatten(op), "Element", "Category"); }
+const cleanSize = s => String(s || "").trim().replace(/[o\u00F8\u00D8\s]+$/, "");
+
+function finish(it) {
+  it.isPipeLike = /^(pipe|pressure pipe)$/i.test(it.type) || (it.hasEnds && it.len > 0);
+  it.nameKey = it.nameIsGeneric ? "" : normalize(it.name);
+  it.category = it.type + (it.layer ? " / " + it.layer : "");
+  it.sizeKey = normalize(it.desc) || normalize(it.partSize) || "(no size)";
+  it.hasLocation = it.hasEnds || it.hasPos || it.hasCenter;
+  it.midX = it.hasEnds ? (it.sx + it.ex) / 2 : (it.hasPos ? it.px : it.cx);
+  it.midY = it.hasEnds ? (it.sy + it.ey) / 2 : (it.hasPos ? it.py : it.cy);
+  return it;
+}
+
+/**
+ * One Revit element node -> item. Pipes: ends from the bounding box (centre ± half the length along the box diagonal;
+ * a sloped box has two possible diagonals, so the other one is kept in altEnds). Structures: centre of the bounding box.
+ */
+function parseRevit(op, flat, opts, unitM, box) {
+  const cat = sstr(flat, "Element", "Category");
+  if (!cat) return null;                                  // file / level / category / family / type / solid nodes
+  let type;
+  if (REVIT_PIPE.test(cat)) type = "Pipe";
+  else if (REVIT_FITTING.test(cat)) type = "Fitting";
+  else if (REVIT_INSULATION.test(cat)) type = "Insulation";
+  else if (REVIT_STRUCTURE.test(cat)) type = "Structure";
+  else type = cat;
+  const prod = op.product || {};
+  const typeName = sstr(flat, "Element", "Type") || sstr(flat, "Revit Type", "Name");
+  const family = sstr(flat, "Element", "Family") || sstr(flat, "Symbol", "FamilyName");
+  const elementName = sstr(flat, "Element", "Name") || sstr(flat, "Element Properties", "Name") || prod.name || "";
+  const mark = sstr(flat, "Element", "Mark");
+  const elementId = sstr(flat, "Element", "Id") || sstr(flat, "Id", "IntegerValue") || sstr(flat, "Element ID", "Value");
+  const it = {
+    id: op.id, modelId: opts && opts.modelId, cls: op.class || "", source: "Revit",
+    name: "", nameIsGeneric: false, type, layer: cat, desc: "", partSize: "",
+    guid: sstr(flat, "Element", "IfcGUID"),
+    material: sstr(flat, "Pipe Segment", "Name") || sstr(flat, "PipeSegment", "Name") || sstr(flat, "Revit Material", "Name"),
+    network: sstr(flat, "Element", "System Name") || sstr(flat, "MEPSystem", "Name"),
+    len: NaN, hasEnds: false, hasPos: false, hasCenter: false, altEnds: null,
+    sx: 0, sy: 0, sz: 0, ex: 0, ey: 0, ez: 0, px: 0, py: 0, pz: 0, cx: 0, cy: 0, cz: 0, flat
+  };
+  if (type === "Pipe") {
+    let size = cleanSize(sstr(flat, "Element", "Size"));
+    if (!size) { const d = sget(flat, "Element", "Diameter"); if (d && typeof d.v === "number" && d.v > 0) size = (d.t === 0 ? d.v / 25.4 : d.v).toFixed(2).replace(/\.?0+$/, "") + '"'; }
+    it.partSize = size;
+    it.desc = (size + " " + (typeName || elementName)).trim();
+    // Revit pipes have no instance name unless a Mark was entered; the type name (RCP, HDPE) is shared by every pipe of that type
+    if (mark) it.name = mark; else { it.name = ((typeName || elementName) + (elementId ? " #" + elementId : "")).trim(); it.nameIsGeneric = true; }
+    // Element · Length: a length value (t=0) is mm; Revit 2025 exports it that way, older NWC exports carry a plain number in mm,
+    // Revit 2023 a text in model units. Keep the candidates and let the bounding box decide below.
+    const le = sget(flat, "Element", "Length");
+    if (le) {
+      let v = le.v;
+      if (typeof v === "string") { const m = v.replace(/,/g, "").match(/-?\d+(\.\d+)?/); v = m ? parseFloat(m[0]) : NaN; }
+      if (typeof v === "number" && v > 0) {
+        const mm = v / 1000 / unitM, units = v;
+        it.lenCands = le.t === 0 ? [mm] : (typeof le.v === "string" ? [units, mm] : [mm, units]);
+        it.len = it.lenCands[0];
+      }
+    }
+  } else {
+    const nm = mark || elementName || prod.name || typeName;
+    it.name = nm;
+    it.desc = typeName && typeName.toUpperCase() !== nm.toUpperCase() ? typeName : (family && family.toUpperCase() !== nm.toUpperCase() ? family : "");
+    it.partSize = cleanSize(sstr(flat, "Element", "Size"));
+  }
+  if (box) {
+    it.cx = (box.min.x + box.max.x) / 2 / unitM; it.cy = (box.min.y + box.max.y) / 2 / unitM; it.cz = (box.min.z + box.max.z) / 2 / unitM; it.hasCenter = true;
+    if (type === "Pipe") {
+      const ex = (box.max.x - box.min.x) / unitM, ey = (box.max.y - box.min.y) / unitM, lb = Math.hypot(ex, ey);
+      if (lb > 0.05) {
+        if (it.lenCands && it.lenCands.length > 1) it.len = it.lenCands.reduce((b, c) => Math.abs(Math.log(c / lb)) < Math.abs(Math.log(b / lb)) ? c : b);
+        const lh = !isNaN(it.len) && it.len > 0 ? Math.min(lb, it.len) : lb;   // the box may include the pipe body; never longer than the pipe
+        const ux = ex / lb, uy = ey / lb;
+        it.hasEnds = true; it.sz = it.cz; it.ez = it.cz;
+        it.sx = it.cx - ux * lh / 2; it.sy = it.cy - uy * lh / 2; it.ex = it.cx + ux * lh / 2; it.ey = it.cy + uy * lh / 2;
+        if (ex > 0.2 && ey > 0.2) it.altEnds = [it.cx - ux * lh / 2, it.cy + uy * lh / 2, it.cx + ux * lh / 2, it.cy - uy * lh / 2];
+        if (isNaN(it.len) || it.len <= 0) it.len = lh;
+      }
+    }
+  }
+  if (!it.hasEnds && it.hasCenter) { it.hasPos = true; it.px = it.cx; it.py = it.cy; it.pz = it.cz; }
+  return finish(it);
+}
+
 /**
  * Turn getObjectProperties results into comparison items.
  * objs: [{id, class, product:{name,objectType,description}, properties:[...]}]
- * opts: { modelId, unitM (metres per model foot), boxes: Map(id -> {min:{x,y,z}, max:{x,y,z}} in metres) }
+ * opts: { modelId, unitM (metres per model foot), boxes: Map(id -> {min:{x,y,z}, max:{x,y,z}} in metres), revit (bool, auto) }
  */
 export function parseObjects(objs, opts) {
   const unitM = (opts && opts.unitM) || 1200 / 3937;
   const boxes = (opts && opts.boxes) || new Map();
+  const revit = opts && opts.revit != null ? !!opts.revit : isRevitModel(objs);
   const items = [];
   for (const op of (objs || [])) {
     const flat = flatten(op);
+    if (revit) { const it = parseRevit(op, flat, opts, unitM, boxes.get(op.id)); if (it) items.push(it); continue; }
     const prod = op.product || {};
     let type = prod.objectType || "";
     const objType = str(flat, ["Information:General Object Type", "Internal Type"]);
@@ -82,14 +190,14 @@ export function parseObjects(objs, opts) {
     if (GROUP_TYPES.test(type) && !hasCivil && !box) continue;
 
     const it = {
-      id: op.id, modelId: opts && opts.modelId, cls: op.class || "",
-      name: str(flat, ["Information:Name"]) || prod.name || "",
+      id: op.id, modelId: opts && opts.modelId, cls: op.class || "", source: "Civil3D",
+      name: str(flat, ["Information:Name"]) || prod.name || "", nameIsGeneric: false,
       type, layer: str(flat, ["General:Layer name", "Layer"]),
       desc: str(flat, ["Information:Description"]) || prod.description || str(flat, ["Description"]),
       partSize: str(flat, ["General:Part Size Name"]),
       material: str(flat, ["Part Data:Material", "General:Material"]),
       network: str(flat, ["General:Network name", "General:Pressure Part Network Name", "General:Pressure Network name"]),
-      len: NaN, hasEnds: false, hasPos: false, hasCenter: false,
+      guid: "", len: NaN, hasEnds: false, hasPos: false, hasCenter: false, altEnds: null,
       sx: 0, sy: 0, sz: 0, ex: 0, ey: 0, ez: 0, px: 0, py: 0, pz: 0, cx: 0, cy: 0, cz: 0, flat
     };
     const sx = num(flat, ["Geometry:Pipe Start Easting", "Geometry:Start Easting"], unitM), sy = num(flat, ["Geometry:Pipe Start Northing", "Geometry:Start Northing"], unitM);
@@ -111,22 +219,18 @@ export function parseObjects(objs, opts) {
       it.hasPos = true; it.px = px; it.py = py;
       it.pz = num(flat, ["Insertion Rim Behavior:Insertion Rim Elevation", "Geometry:Insertion Point Elevation"], unitM) || 0;
     } else if (!it.hasEnds && it.hasCenter) { it.hasPos = true; it.px = it.cx; it.py = it.cy; it.pz = it.cz; }
-
-    it.isPipeLike = /^(pipe|pressure pipe)$/i.test(type) || (it.hasEnds && it.len > 0);
-    it.nameKey = normalize(it.name);
-    it.category = type + (it.layer ? " / " + it.layer : "");
-    it.sizeKey = normalize(it.desc) || normalize(it.partSize) || "(no size)";
-    it.hasLocation = it.hasEnds || it.hasPos || it.hasCenter;
-    it.midX = it.hasEnds ? (it.sx + it.ex) / 2 : (it.hasPos ? it.px : it.cx);
-    it.midY = it.hasEnds ? (it.sy + it.ey) / 2 : (it.hasPos ? it.py : it.cy);
-    items.push(it);
+    items.push(finish(it));
   }
   return items;
 }
 
-/** objects that need a bounding box to get a location (no Civil 3D coordinates) */
-export function needsBox(op) {
+/** objects that need a bounding box to get a location (no Civil 3D coordinates). In a Revit model only the countable element nodes. */
+export function needsBox(op, revit) {
   const flat = flatten(op);
+  if (revit) {
+    const cat = sstr(flat, "Element", "Category");
+    return !!cat && !REVIT_INSULATION.test(cat) && !REVIT_FITTING.test(cat) && !REVIT_IGNORE.test(cat);
+  }
   const type = (op.product && op.product.objectType) || "";
   if (GROUP_TYPES.test(type) && !GEOM_TYPES.test(type)) return false;
   const hasCoord = [...flat.values()].some(e => /(easting|northing)/i.test(e.name));
@@ -146,7 +250,16 @@ function pointToSegment(px, py, ax, ay, bx, by) {
   const cx = ax + t * vx, cy = ay + t * vy;
   return Math.hypot(px - cx, py - cy);
 }
-export function pipeFit(p, a) { return Math.max(pointToSegment(a.sx, a.sy, p.sx, p.sy, p.ex, p.ey), pointToSegment(a.ex, a.ey, p.sx, p.sy, p.ex, p.ey)); }
+const endsOf = m => m.altEnds ? [[m.sx, m.sy, m.ex, m.ey], m.altEnds] : [[m.sx, m.sy, m.ex, m.ey]];
+/** worst of the two as-built end points measured to the proposed pipe; the best of the possible box diagonals when ends came from a bounding box */
+export function pipeFit(p, a) {
+  let best = Infinity;
+  for (const P of endsOf(p)) for (const A of endsOf(a)) {
+    const d = Math.max(pointToSegment(A[0], A[1], P[0], P[1], P[2], P[3]), pointToSegment(A[2], A[3], P[0], P[1], P[2], P[3]));
+    if (d < best) best = d;
+  }
+  return best;
+}
 export function distance(p, a) {
   if (!p.hasLocation || !a.hasLocation) return 0;
   if (p.isPipeLike && a.isPipeLike && p.hasEnds && a.hasEnds) return pipeFit(p, a);
@@ -173,15 +286,25 @@ export function compare(proposed, asBuilt, opt) {
   for (const p of scope) { const r = { proposed: p, asBuilt: [], method: "", proposedLen: p.isPipeLike && !isNaN(p.len) ? p.len : 0, installedLen: 0, progress: 0, status: "Not Started", dist: NaN }; results.set(p, r); items.push(r); }
   const used = new Set();
 
+  // pass 0: Revit keeps the IfcGUID of an element across exports - same GUID in both models = the same object
+  const byGuid = new Map();
+  for (const p of scope) { if (!p.guid) continue; if (!byGuid.has(p.guid)) byGuid.set(p.guid, []); byGuid.get(p.guid).push(p); }
+  if (byGuid.size) for (const a of asBuilt) {
+    if (!a.guid) continue;
+    const cands = byGuid.get(a.guid); if (!cands) continue;
+    let best = null, bestD = Infinity;
+    for (const p of cands) { if (typeGroup(p) !== typeGroup(a)) continue; const d = distance(p, a); if (d <= nameAllowance(p, tol) && d < bestD) { bestD = d; best = p; } }
+    if (best) { const r = results.get(best); r.asBuilt.push(a); r.method = "GUID"; r.dist = isNaN(r.dist) ? bestD : Math.max(r.dist, bestD); used.add(a); }
+  }
   // pass 1: same name (and kind), close enough to be the same object
   const byName = new Map();
   for (const p of scope) { if (!p.nameKey) continue; const k = typeGroup(p) + "|" + p.nameKey; if (!byName.has(k)) byName.set(k, []); byName.get(k).push(p); }
   for (const a of asBuilt) {
-    if (!a.nameKey) continue;
+    if (used.has(a) || !a.nameKey) continue;
     const cands = byName.get(typeGroup(a) + "|" + a.nameKey); if (!cands) continue;
     let best = null, bestD = Infinity;
     for (const p of cands) { const d = distance(p, a); if (d <= nameAllowance(p, tol) && d < bestD) { bestD = d; best = p; } }
-    if (best) { const r = results.get(best); r.asBuilt.push(a); r.method = "Name"; r.dist = isNaN(r.dist) ? bestD : Math.max(r.dist, bestD); used.add(a); }
+    if (best) { const r = results.get(best); r.asBuilt.push(a); if (!r.method) r.method = "Name"; r.dist = isNaN(r.dist) ? bestD : Math.max(r.dist, bestD); used.add(a); }
   }
   // pass 2: location for whatever is left
   const pipes = scope.filter(p => p.isPipeLike && p.hasEnds), points = scope.filter(p => !p.isPipeLike && p.hasLocation);
@@ -220,7 +343,6 @@ export function compare(proposed, asBuilt, opt) {
   res.modelPctByCount = res.modelProposedCount ? 100 * res.modelAsBuiltCount / res.modelProposedCount : NaN;
   return res;
 }
-
 // ---------------- reporting ----------------
 export const pct = v => (v == null || isNaN(v)) ? "-" : v.toFixed(1) + "%";
 export const lenF = v => (v == null || isNaN(v)) ? "" : v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -309,7 +431,7 @@ export function htmlReport(r, meta) {
     for (const a of r.asBuiltOnly) h += "<tr><td>" + esc(a.type) + "</td><td>" + esc(a.name) + "</td><td>" + esc(a.desc) + "</td><td>" + esc(a.layer) + "</td><td class=num>" + n2(a.midX, 1) + "</td><td class=num>" + n2(a.midY, 1) + "</td></tr>";
     h += "</table>";
   }
-  h += "<p class=meta>Only pipes and structures count. Ignored: " + r.ignored.length + " proposed and " + r.asBuiltIgnored + " as-built objects that are not pipes or structures (fittings, solids, blocks)."
+  h += "<p class=meta>Only pipes and structures count. Ignored: " + r.ignored.length + " proposed and " + r.asBuiltIgnored + " as-built objects that are not pipes or structures (fittings, pipe insulation / clearance, centre lines, solids, blocks)."
     + (r.excluded.length ? " " + r.excluded.length + " proposed objects were excluded by the category filter." : "") + "</p>";
   return h + "</body></html>";
 }
