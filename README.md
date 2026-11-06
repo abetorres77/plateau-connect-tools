@@ -78,7 +78,7 @@ Same logic as the `ConnectPointExtractor.html` bookmarklet on the Desktop, verif
 
 ## Progress % (3D Viewer tool) — proposed model vs as-built model, percent complete
 
-1. Load the design model and the as-built model in the 3D Viewer, open **Plateau Tools** (left toolbar) → **Completion**.
+1. Load the design model and the as-built model in the 3D Viewer, open **Plateau Tools** (left toolbar) → **Progress %**.
 2. The two pickers guess which model is which (a name with `-AB` / `AS-BUILT` / `ASBUILT` / `RECORD` is taken as the as-built). Fix them if needed, set the location tolerance (default 3 ft), then **Compare**. A proposed object with a matching as-built object is **Complete**, anything else is **Not Started**; as-built lengths are never compared to design lengths and there is no *Partial* status (owner's request 2026-11-05). LF figures weight complete pipes by their design length.
 3. Tiles: **Overall completion** (complete items / proposed items in scope), **Pipe complete by design length**, **Structures** complete, **Model-to-model** (as-built object count as a share of the proposed object count, no matching). Only pipes (incl. pressure pipes) and structures count: fittings, 3D solids, blocks and layers in either model are ignored in every count, and the status line says how many were ignored.
 4. Tabs: by category (object type + layer), by pipe size, every proposed item (status, matched as-built object, design LF; click a row to select the objects in the viewer and zoom to them), and as-built objects with no proposed counterpart. Untick categories to leave e.g. water DIP or fittings out of the percentage.
