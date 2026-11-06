@@ -2,7 +2,7 @@
 // and the harness. Pure functions, no DOM. Mirrors ModelCompletion (the desktop exe) so both give the same numbers.
 // Reads Civil 3D (NWC/DWG) models through their Civil3D properties and Revit (NWC) models through the element nodes
 // that carry an "Element" property set (build v2026.11.06b).
-export const VERSION = "v2026.11.06b";
+export const VERSION = "v2026.11.06c";
 
 const GROUP_TYPES = /^(file|layer|lcoapartition|block|insert|category|family|type|levels?:?.*|group|collection|)$/i;
 const GEOM_TYPES = /^(pipe|pressure pipe|structure|fitting|appurtenance|3d solid|solid)$/i;
@@ -367,8 +367,6 @@ export function textSummary(r, meta) {
   L.push("  As-built objects with no proposed counterpart: " + r.asBuiltOnly.length);
   L.push("  Ignored (not pipes or structures): " + r.ignored.length + " proposed, " + r.asBuiltIgnored + " as-built");
   L.push("");
-  L.push("MODEL-TO-MODEL: as-built model holds " + r.modelAsBuiltCount + " of the " + r.modelProposedCount + " proposed objects (" + pct(r.modelPctByCount) + ")");
-  L.push("");
   L.push("BY CATEGORY");
   for (const g of r.byCategory) L.push("  " + g.key.padEnd(40) + " " + g.complete + "/" + g.count + " complete (" + pct(pctByCount(g)) + ")" + (g.proposedLen > 0 ? ", " + lenF(g.installedLen) + "/" + lenF(g.proposedLen) + " LF (" + pct(pctByLength(g)) + ")" : ""));
   L.push("");
@@ -382,7 +380,6 @@ export function summaryRows(r) {
   const row = (grp, g) => [grp, g.key, g.count, g.complete, g.notStarted, n2(pctByCount(g), 1), n2(g.proposedLen, 2), n2(g.installedLen, 2), n2(pctByLength(g), 1)];
   const rows = [["Group", "Key", "Items", "Complete", "Not Started", "Pct By Count", "Design LF", "Complete LF", "Pct By Length"]];
   rows.push(row("Overall", r.overall), row("Overall", r.pipes), row("Overall", r.points));
-  rows.push(["Model-to-model", "As-built objects vs proposed objects", r.modelProposedCount, r.modelAsBuiltCount, "", n2(r.modelPctByCount, 1), "", "", ""]);
   for (const g of r.byCategory) rows.push(row("Category", g));
   for (const g of r.bySize) rows.push(row("Pipe size", g));
   return rows;
@@ -415,7 +412,7 @@ export function htmlReport(r, meta) {
   h += '<div class="tiles">' + tile("Overall completion", pct(pctByCount(r.overall)), r.overall.complete + " of " + r.overall.count + " items complete") +
     tile("Pipe complete by design length", pct(pctByLength(r.pipes)), lenF(r.pipes.installedLen) + " of " + lenF(r.pipes.proposedLen) + " LF") +
     tile("Structures", pct(pctByCount(r.points)), r.points.complete + " of " + r.points.count + " complete") +
-    tile("Model-to-model", pct(r.modelPctByCount), r.modelAsBuiltCount + " as-built of " + r.modelProposedCount + " proposed objects") + "</div>";
+    "</div>";
   h += "<h2>By category</h2><table>" + ghead("Category") + r.byCategory.map(grow).join("") + "</table>";
   h += "<h2>By pipe size</h2><table>" + ghead("Size") + r.bySize.map(grow).join("") + "</table>";
   h += "<h2>Items (" + r.items.length + ")</h2><table><tr><th>Status</th><th>Type</th><th>Name</th><th>Description</th><th>Layer</th><th class=num>Design LF</th><th>Matched as-built</th><th>Match</th><th class=num>Dist ft</th><th>From</th><th>To</th></tr>";
