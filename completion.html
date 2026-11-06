@@ -95,7 +95,7 @@
   <div id="app" hidden>
     <div class="card">
       <div class="two">
-        <div><label>Proposed (design) model</label><select id="m-proposed" class="model"></select></div>
+        <div><label>Proposed (design) models - tick every design model the as-built covers</label><div class="models" id="m-proposed"></div></div>
         <div><label>As-built model</label><select id="m-asbuilt" class="model"></select></div>
       </div>
       <div class="row">
@@ -127,7 +127,7 @@
 
     <div class="card" id="res-card" hidden>
       <div class="tabs">
-        <button class="active" data-tab="cat">By category</button><button data-tab="size">By pipe size</button><button data-tab="items">Items</button><button data-tab="abonly">As-built only</button>
+        <button class="active" data-tab="cat">By category</button><button data-tab="size">By pipe size</button><button data-tab="model">By model</button><button data-tab="items">Items</button><button data-tab="abonly">As-built only</button>
       </div>
       <div class="row" id="item-filter" hidden>
         <select id="f-status"><option value="">All statuses</option><option>Complete</option><option>Not Started</option></select>
@@ -205,18 +205,23 @@ async function refreshModels() {
   let all = [];
   try { all = (await API.viewer.getModels("loaded")) || []; } catch (e) { log("getModels", e); }
   models = all;
-  const prevP = $("m-proposed").value, prevA = $("m-asbuilt").value;
-  for (const sel of ["m-proposed", "m-asbuilt"]) {
-    const s = $(sel); s.innerHTML = "";
-    const none = document.createElement("option"); none.value = ""; none.textContent = models.length ? "(choose a model)" : "(no models loaded)"; s.appendChild(none);
-    for (const m of models) { const o = document.createElement("option"); o.value = m.id; o.textContent = m.name || m.id; s.appendChild(o); }
-  }
-  // keep the user's picks; otherwise guess: a name that says AB / as-built is the as-built, the first other model is the proposed
+  const prevP = new Set(proposedIds()), hadP = document.querySelectorAll("#m-proposed input").length > 0, prevA = $("m-asbuilt").value;
   const ids = models.map(m => m.id);
   const ab = models.find(m => looksAsBuilt(m.name));
-  const pr = models.find(m => !ab || m.id !== ab.id);
-  $("m-asbuilt").value = ids.includes(prevA) ? prevA : (ab ? ab.id : "");
-  $("m-proposed").value = ids.includes(prevP) ? prevP : (pr ? pr.id : "");
+  const abId = ids.includes(prevA) ? prevA : (ab ? ab.id : "");
+  const s = $("m-asbuilt"); s.innerHTML = "";
+  const none = document.createElement("option"); none.value = ""; none.textContent = models.length ? "(choose a model)" : "(no models loaded)"; s.appendChild(none);
+  for (const m of models) { const o = document.createElement("option"); o.value = m.id; o.textContent = m.name || m.id; s.appendChild(o); }
+  s.value = abId;
+  // proposed: tick boxes; keep the user's picks, otherwise every model that is not the as-built (a combined as-built covers several design models)
+  const box = $("m-proposed"); box.innerHTML = "";
+  if (!models.length) box.textContent = "(no models loaded)";
+  for (const m of models) {
+    const lab = document.createElement("label"); lab.className = "inline";
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.value = m.id;
+    cb.checked = hadP ? prevP.has(m.id) : (m.id !== abId);
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(m.name || m.id)); box.appendChild(lab);
+  }
   knownIds = new Set(ids);
   if (!models.length) setStatus("No models loaded. Load the design and as-built models in the viewer, then Refresh models.", "warn");
 }
@@ -241,6 +246,14 @@ async function listModelObjects(m) {
     if (ids.length) return { modelId: groups[0].modelId || m.id, ids, via: a.via };
   }
   return { modelId: m.id, ids: [], via: "nothing" };
+}
+
+const proposedIds = () => [...document.querySelectorAll("#m-proposed input:checked")].map(i => i.value);
+// the proposed side is the union of every ticked design model
+function combinedProposed(ids) {
+  const parts = ids.map(id => cache.get(id)).filter(Boolean);
+  if (!parts.length || parts.length < ids.length) return null;
+  return { items: parts.flatMap(p => p.items), count: parts.reduce((n, p) => n + p.count, 0), name: parts.map(p => p.name).join(" + ") };
 }
 
 async function readModel(m, label) {
@@ -288,7 +301,7 @@ async function readModel(m, label) {
     for (let i = 0; i < missing.length; i += 8) await Promise.all(missing.slice(i, i + 8).map(one));
     log(label + ": boxes now " + boxes.size + " of " + need.length + " needed");
   }
-  const items = C.parseObjects(objs, { modelId: found.modelId, unitM: UNIT_M[$("units").value], boxes, revit });
+  const items = C.parseObjects(objs, { modelId: found.modelId, modelName: m.name, unitM: UNIT_M[$("units").value], boxes, revit });
   const entry = { items, count: objs.length, name: m.name, modelId: found.modelId, ids: found.ids };
   cache.set(m.id, entry);
   return entry;
@@ -309,13 +322,13 @@ function fillCategories(items) {
 
 async function run() {
   if (busy) return;
-  const pid = $("m-proposed").value, aid = $("m-asbuilt").value;
-  if (!pid || !aid) { setStatus("Pick the proposed model and the as-built model.", "warn"); return; }
-  if (pid === aid) { setStatus("Proposed and as-built must be different models.", "warn"); return; }
+  const pids = proposedIds().filter(id => id !== $("m-asbuilt").value), aid = $("m-asbuilt").value;
+  if (!pids.length || !aid) { setStatus("Tick at least one proposed model and pick the as-built model.", "warn"); return; }
   busy = true; $("run").disabled = true;
   try {
-    const mp = models.find(m => m.id === pid), ma = models.find(m => m.id === aid);
-    const P = await readModel(mp, "proposed"), A = await readModel(ma, "as-built");
+    const ma = models.find(m => m.id === aid);
+    for (const pid of pids) await readModel(models.find(m => m.id === pid), "proposed " + (pids.indexOf(pid) + 1) + "/" + pids.length);
+    const P = combinedProposed(pids), A = await readModel(ma, "as-built");
     if (colored && colored.modelId !== A.modelId) await uncolor();
     await colorModel(A, AS_BUILT_COLOR); colored = A; $("uncolor").disabled = false;
     fillCategories(P.items);
@@ -326,7 +339,7 @@ async function run() {
 }
 
 function compareOnly() {
-  const P = cache.get($("m-proposed").value), A = cache.get($("m-asbuilt").value);
+  const P = combinedProposed(proposedIds().filter(id => id !== $("m-asbuilt").value)), A = cache.get($("m-asbuilt").value);
   if (!P || !A) return;
   const checked = [...document.querySelectorAll("#cats input:checked")].map(i => i.value);
   const all = document.querySelectorAll("#cats input").length;
@@ -349,16 +362,17 @@ function render() {
 const TH = {
   cat: ["Category", "Items", "Complete", "Not started", "% complete", "Design LF", "Complete LF", "% by length"],
   size: ["Pipe size", "Pipes", "Complete", "Not started", "% complete", "Design LF", "Complete LF", "% by length"],
-  items: ["Status", "Type", "Name", "Description", "Layer", "Design LF", "Matched as-built", "Match", "Dist ft", "From", "To"],
+  model: ["Proposed model", "Items", "Complete", "Not started", "% complete", "Design LF", "Complete LF", "% by length"],
+  items: ["Status", "Model", "Type", "Name", "Description", "Layer", "Design LF", "Matched as-built", "Match", "Dist ft", "From", "To"],
   abonly: ["Type", "Name", "Description", "Layer", "Easting", "Northing"]
 };
-const NUM = { cat: [1, 2, 3, 4, 5, 6, 7], size: [1, 2, 3, 4, 5, 6, 7], items: [5, 8], abonly: [4, 5] };
+const NUM = { cat: [1, 2, 3, 4, 5, 6, 7], size: [1, 2, 3, 4, 5, 6, 7], model: [1, 2, 3, 4, 5, 6, 7], items: [6, 9], abonly: [4, 5] };
 const f1 = v => isNaN(v) ? "" : Number(v).toFixed(1);
 const f0 = v => isNaN(v) ? "" : Number(v).toFixed(0);
 
 function visibleItems() {
   const st = $("f-status").value, q = $("f-text").value.trim().toLowerCase();
-  return result.items.filter(it => (!st || it.status === st) && (!q || [it.proposed.name, it.proposed.desc, it.proposed.layer, C.asBuiltNames(it), C.startStruct(it.proposed), C.endStruct(it.proposed)].some(s => String(s || "").toLowerCase().includes(q))));
+  return result.items.filter(it => (!st || it.status === st) && (!q || [it.proposed.name, it.proposed.model, it.proposed.desc, it.proposed.layer, C.asBuiltNames(it), C.startStruct(it.proposed), C.endStruct(it.proposed)].some(s => String(s || "").toLowerCase().includes(q))));
 }
 
 function renderTable() {
@@ -368,8 +382,8 @@ function renderTable() {
   thead.innerHTML = "<tr>" + TH[tab].map((h, i) => "<th" + (NUM[tab].includes(i) ? ' class="num"' : "") + ">" + esc(h) + "</th>").join("") + "</tr>";
   const rows = [];
   const cell = (v, i, cls) => "<td" + ((NUM[tab].includes(i) ? ' class="num' + (cls ? " " + cls : "") + '"' : (cls ? ' class="' + cls + '"' : ""))) + ">" + esc(v) + "</td>";
-  if (tab === "cat" || tab === "size") {
-    const groups = tab === "cat" ? r.byCategory : r.bySize;
+  if (tab === "cat" || tab === "size" || tab === "model") {
+    const groups = tab === "cat" ? r.byCategory : (tab === "size" ? r.bySize : r.byModel);
     for (const g of groups) {
       const v = [g.key, g.count, g.complete, g.notStarted, f1(C.pctByCount(g)), g.proposedLen > 0 ? f1(g.proposedLen) : "", g.proposedLen > 0 ? f1(g.installedLen) : "", g.proposedLen > 0 ? f1(C.pctByLength(g)) : ""];
       rows.push("<tr>" + v.map((x, i) => cell(x, i)).join("") + "</tr>");
@@ -379,7 +393,7 @@ function renderTable() {
     const list = visibleItems();
     list.forEach((it, idx) => {
       const p = it.proposed;
-      const v = [it.status, p.type, p.name, p.desc, p.layer, p.isPipeLike ? f1(it.proposedLen) : "", C.asBuiltNames(it), it.method, f1(it.dist), C.startStruct(p), C.endStruct(p)];
+      const v = [it.status, p.model, p.type, p.name, p.desc, p.layer, p.isPipeLike ? f1(it.proposedLen) : "", C.asBuiltNames(it), it.method, f1(it.dist), C.startStruct(p), C.endStruct(p)];
       rows.push('<tr class="sel" data-i="' + idx + '">' + v.map((x, i) => cell(x, i, i === 0 ? it.status.replace(" ", "") : "")).join("") + "</tr>");
     });
     $("count").textContent = list.length + " of " + r.items.length + " proposed objects";
@@ -450,6 +464,7 @@ $("uncolor").addEventListener("click", uncolor);
 $("tol").addEventListener("change", () => { if (result && !busy) compareOnly(); });
 $("units").addEventListener("change", () => { cache.clear(); result = null; $("tiles").hidden = true; $("res-card").hidden = true; });
 for (const id of ["m-proposed", "m-asbuilt"]) $(id).addEventListener("change", () => { uncolor(); result = null; $("tiles").hidden = true; $("res-card").hidden = true; $("cat-card").hidden = true; });
+$("m-asbuilt").addEventListener("change", () => { const a = $("m-asbuilt").value; for (const cb of document.querySelectorAll("#m-proposed input")) if (cb.value === a) cb.checked = false; });
 init().catch(err => { $("view-connecting").textContent = "Could not connect to Trimble Connect: " + err.message; });
 </script>
 </body>
