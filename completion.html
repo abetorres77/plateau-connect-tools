@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PEI Completion</title>
+<title>PEI Progress %</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet"><style>
   :root {
     --navy: #252a2e; --blue: #0063a3; --blue-dark: #004f83; --orange: #f2c244; /* Plateau yellow accent */
@@ -88,7 +88,7 @@
   @media (max-width: 420px) { .two { grid-template-columns: 1fr; } }
 </style></head>
 <body>
-<header><div class="dot"></div><h1>Completion</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="ver" id="ver"></span></header>
+<header><div class="dot"></div><h1>Progress %</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="ver" id="ver"></span></header>
 <main>
   <div id="view-connecting" class="card">Connecting to Trimble Connect…</div>
 
@@ -193,7 +193,7 @@ async function init() {
     if (event === "viewer.onModelStateChanged") refreshModels().catch(e => log("refresh", e));
   }, 180000);
   if (!API.viewer) {
-    $("view-connecting").innerHTML = "<h2>Open this tool inside the 3D Viewer</h2><p class='muted'>Completion compares the models loaded in the 3D Viewer, so open it from the Plateau Tools icon in the viewer&#39;s left toolbar.</p>";
+    $("view-connecting").innerHTML = "<h2>Open this tool inside the 3D Viewer</h2><p class='muted'>Progress % compares the models loaded in the 3D Viewer, so open it from the Plateau Tools icon in the viewer&#39;s left toolbar.</p>";
     return;
   }
   $("view-connecting").hidden = true;
