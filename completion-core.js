@@ -2,7 +2,7 @@
 // and the harness. Pure functions, no DOM. Mirrors ModelCompletion (the desktop exe) so both give the same numbers.
 // Reads Civil 3D (NWC/DWG) models through their Civil3D properties and Revit (NWC) models through the element nodes
 // that carry an "Element" property set (build v2026.11.06b).
-export const VERSION = "v2026.11.06c";
+export const VERSION = "v2026.11.06d";
 
 const GROUP_TYPES = /^(file|layer|lcoapartition|block|insert|category|family|type|levels?:?.*|group|collection|)$/i;
 const GEOM_TYPES = /^(pipe|pressure pipe|structure|fitting|appurtenance|3d solid|solid)$/i;
@@ -165,7 +165,7 @@ function parseRevit(op, flat, opts, unitM, box) {
 /**
  * Turn getObjectProperties results into comparison items.
  * objs: [{id, class, product:{name,objectType,description}, properties:[...]}]
- * opts: { modelId, unitM (metres per model foot), boxes: Map(id -> {min:{x,y,z}, max:{x,y,z}} in metres), revit (bool, auto) }
+ * opts: { modelId, modelName, unitM (metres per model foot), boxes: Map(id -> {min:{x,y,z}, max:{x,y,z}} in metres), revit (bool, auto) }
  */
 export function parseObjects(objs, opts) {
   const unitM = (opts && opts.unitM) || 1200 / 3937;
@@ -221,6 +221,8 @@ export function parseObjects(objs, opts) {
     } else if (!it.hasEnds && it.hasCenter) { it.hasPos = true; it.px = it.cx; it.py = it.cy; it.pz = it.cz; }
     items.push(finish(it));
   }
+  const modelName = (opts && opts.modelName) || "";
+  for (const it of items) it.model = modelName;      // several proposed models can be combined; the report says which one each object came from
   return items;
 }
 
@@ -326,8 +328,9 @@ export function compare(proposed, asBuilt, opt) {
     r.progress = done ? 1 : 0; r.status = done ? "Complete" : "Not Started"; r.installedLen = done ? r.proposedLen : 0;
   }
   const overall = newGroup("All included items"), pipesG = newGroup("Pipes"), pointsG = newGroup("Structures");
-  const cat = new Map(), size = new Map();
+  const cat = new Map(), size = new Map(), mdl = new Map();
   for (const r of items) {
+    const mk = r.proposed.model || ""; if (!mdl.has(mk)) mdl.set(mk, newGroup(mk)); addTo(mdl.get(mk), r);
     addTo(overall, r); addTo(r.proposed.isPipeLike ? pipesG : pointsG, r);
     if (!cat.has(r.proposed.category)) cat.set(r.proposed.category, newGroup(r.proposed.category)); addTo(cat.get(r.proposed.category), r);
     if (r.proposed.isPipeLike) { if (!size.has(r.proposed.sizeKey)) size.set(r.proposed.sizeKey, newGroup(r.proposed.sizeKey)); addTo(size.get(r.proposed.sizeKey), r); }
@@ -337,6 +340,7 @@ export function compare(proposed, asBuilt, opt) {
     overall, pipes: pipesG, points: pointsG,
     byCategory: [...cat.values()].sort((a, b) => a.key.localeCompare(b.key)),
     bySize: [...size.values()].sort((a, b) => sizeSort(a.key) - sizeSort(b.key) || a.key.localeCompare(b.key)),
+    byModel: [...mdl.values()].sort((a, b) => a.key.localeCompare(b.key)),
     proposedCount: proposed.length, asBuiltCount: asBuiltAll.length,
     modelProposedCount: scope.length, modelAsBuiltCount: asBuilt.length
   };
@@ -367,6 +371,11 @@ export function textSummary(r, meta) {
   L.push("  As-built objects with no proposed counterpart: " + r.asBuiltOnly.length);
   L.push("  Ignored (not pipes or structures): " + r.ignored.length + " proposed, " + r.asBuiltIgnored + " as-built");
   L.push("");
+  if (r.byModel.length > 1) {
+    L.push("BY PROPOSED MODEL");
+    for (const g of r.byModel) L.push("  " + g.key.padEnd(40) + " " + g.complete + "/" + g.count + " complete (" + pct(pctByCount(g)) + ")" + (g.proposedLen > 0 ? ", " + lenF(g.installedLen) + "/" + lenF(g.proposedLen) + " LF (" + pct(pctByLength(g)) + ")" : ""));
+    L.push("");
+  }
   L.push("BY CATEGORY");
   for (const g of r.byCategory) L.push("  " + g.key.padEnd(40) + " " + g.complete + "/" + g.count + " complete (" + pct(pctByCount(g)) + ")" + (g.proposedLen > 0 ? ", " + lenF(g.installedLen) + "/" + lenF(g.proposedLen) + " LF (" + pct(pctByLength(g)) + ")" : ""));
   L.push("");
@@ -380,16 +389,17 @@ export function summaryRows(r) {
   const row = (grp, g) => [grp, g.key, g.count, g.complete, g.notStarted, n2(pctByCount(g), 1), n2(g.proposedLen, 2), n2(g.installedLen, 2), n2(pctByLength(g), 1)];
   const rows = [["Group", "Key", "Items", "Complete", "Not Started", "Pct By Count", "Design LF", "Complete LF", "Pct By Length"]];
   rows.push(row("Overall", r.overall), row("Overall", r.pipes), row("Overall", r.points));
+  for (const g of r.byModel) rows.push(row("Proposed model", g));
   for (const g of r.byCategory) rows.push(row("Category", g));
   for (const g of r.bySize) rows.push(row("Pipe size", g));
   return rows;
 }
 
 export function itemsCsv(r) {
-  const L = ["Status,Type,Name,Description,Part Size,Layer,Network,Design LF,Matched As-Built,Match Method,Match Dist ft,Start Structure,End Structure,Easting,Northing"];
+  const L = ["Status,Model,Type,Name,Description,Part Size,Layer,Network,Design LF,Matched As-Built,Match Method,Match Dist ft,Start Structure,End Structure,Easting,Northing"];
   for (const it of r.items) {
     const p = it.proposed;
-    L.push([it.status, p.type, p.name, p.desc, p.partSize, p.layer, p.network, p.isPipeLike ? n2(it.proposedLen, 2) : "",
+    L.push([it.status, p.model, p.type, p.name, p.desc, p.partSize, p.layer, p.network, p.isPipeLike ? n2(it.proposedLen, 2) : "",
       asBuiltNames(it), it.method, n2(it.dist, 2), startStruct(p), endStruct(p), n2(p.midX, 2), n2(p.midY, 2)].map(csvq).join(","));
   }
   L.push(""); L.push("AS-BUILT ONLY (no proposed counterpart)"); L.push("Type,Name,Description,Part Size,Layer,Easting,Northing");
@@ -413,13 +423,14 @@ export function htmlReport(r, meta) {
     tile("Pipe complete by design length", pct(pctByLength(r.pipes)), lenF(r.pipes.installedLen) + " of " + lenF(r.pipes.proposedLen) + " LF") +
     tile("Structures", pct(pctByCount(r.points)), r.points.complete + " of " + r.points.count + " complete") +
     "</div>";
+  if (r.byModel.length > 1) h += "<h2>By proposed model</h2><table>" + ghead("Model") + r.byModel.map(grow).join("") + "</table>";
   h += "<h2>By category</h2><table>" + ghead("Category") + r.byCategory.map(grow).join("") + "</table>";
   h += "<h2>By pipe size</h2><table>" + ghead("Size") + r.bySize.map(grow).join("") + "</table>";
-  h += "<h2>Items (" + r.items.length + ")</h2><table><tr><th>Status</th><th>Type</th><th>Name</th><th>Description</th><th>Layer</th><th class=num>Design LF</th><th>Matched as-built</th><th>Match</th><th class=num>Dist ft</th><th>From</th><th>To</th></tr>";
+  h += "<h2>Items (" + r.items.length + ")</h2><table><tr><th>Status</th><th>Model</th><th>Type</th><th>Name</th><th>Description</th><th>Layer</th><th class=num>Design LF</th><th>Matched as-built</th><th>Match</th><th class=num>Dist ft</th><th>From</th><th>To</th></tr>";
   const sorted = [...r.items].sort((a, b) => a.status.localeCompare(b.status) || a.proposed.category.localeCompare(b.proposed.category) || a.proposed.name.localeCompare(b.proposed.name));
   for (const it of sorted) {
     const p = it.proposed;
-    h += '<tr class="' + it.status.replace(" ", "") + '"><td>' + esc(it.status) + "</td><td>" + esc(p.type) + "</td><td>" + esc(p.name) + "</td><td>" + esc(p.desc) + "</td><td>" + esc(p.layer) + "</td><td class=num>" + (p.isPipeLike ? lenF(it.proposedLen) : "") + "</td><td>" + esc(asBuiltNames(it)) + "</td><td>" + esc(it.method) + "</td><td class=num>" + n2(it.dist, 1) + "</td><td>" + esc(startStruct(p)) + "</td><td>" + esc(endStruct(p)) + "</td></tr>";
+    h += '<tr class="' + it.status.replace(" ", "") + '"><td>' + esc(it.status) + "</td><td>" + esc(p.model) + "</td><td>" + esc(p.type) + "</td><td>" + esc(p.name) + "</td><td>" + esc(p.desc) + "</td><td>" + esc(p.layer) + "</td><td class=num>" + (p.isPipeLike ? lenF(it.proposedLen) : "") + "</td><td>" + esc(asBuiltNames(it)) + "</td><td>" + esc(it.method) + "</td><td class=num>" + n2(it.dist, 1) + "</td><td>" + esc(startStruct(p)) + "</td><td>" + esc(endStruct(p)) + "</td></tr>";
   }
   h += "</table><h2>As-built objects with no proposed counterpart (" + r.asBuiltOnly.length + ")</h2>";
   if (!r.asBuiltOnly.length) h += "<p class=muted>None.</p>";
