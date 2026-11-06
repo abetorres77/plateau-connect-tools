@@ -255,9 +255,11 @@ async function readModel(m, label) {
     const props = await API.viewer.getObjectProperties(found.modelId, found.ids.slice(i, i + CHUNK));
     for (const op of (props || [])) objs.push(op);
   }
-  // objects without Civil 3D coordinates (3D solids, blocks) get a location from their bounding box
+  // objects without Civil 3D coordinates (3D solids, blocks, every Revit element) get a location from their bounding box
+  const revit = C.isRevitModel(objs);
+  log(label + ": " + objs.length + " nodes, revit=" + revit);
   const boxes = new Map();
-  const need = objs.filter(C.needsBox).map(o => o.id);
+  const need = objs.filter(o => C.needsBox(o, revit)).map(o => o.id);
   if (need.length && API.viewer.getObjectBoundingBoxes) {
     for (let i = 0; i < need.length; i += CHUNK) {
       setStatus("Reading " + label + " geometry… " + i + " / " + need.length);
@@ -265,7 +267,29 @@ async function readModel(m, label) {
       catch (e) { log("getObjectBoundingBoxes", e); break; }
     }
   }
-  const items = C.parseObjects(objs, { modelId: found.modelId, unitM: UNIT_M[$("units").value], boxes });
+  // A Revit structure element has no geometry of its own (its solids are child nodes). If the viewer gave no box for the
+  // element itself, take the union of its children's boxes.
+  const missing = revit ? need.filter(id => !boxes.has(id)) : [];
+  if (missing.length && API.viewer.getHierarchyChildren && API.viewer.getObjectBoundingBoxes) {
+    log(label + ": " + missing.length + " elements without a bounding box, reading their children");
+    let done = 0, failed = 0;
+    const one = async (id) => {
+      try {
+        const raw = await API.viewer.getHierarchyChildren(found.modelId, [id], true);
+        const kids = []; const walk = (x) => { if (x == null) return; if (Array.isArray(x)) { x.forEach(walk); return; } if (typeof x === "number") kids.push(x); else if (typeof x === "object") { if (typeof x.id === "number") kids.push(x.id); if (x.objects) walk(x.objects); if (x.children) walk(x.children); } };
+        walk(raw);
+        if (!kids.length) return;
+        const bb = (await API.viewer.getObjectBoundingBoxes(found.modelId, kids)) || [];
+        let u = null;
+        for (const b of bb) { if (!b || !b.boundingBox) continue; const x = b.boundingBox; if (!u) u = { min: { ...x.min }, max: { ...x.max } }; else { for (const k of ["x", "y", "z"]) { u.min[k] = Math.min(u.min[k], x.min[k]); u.max[k] = Math.max(u.max[k], x.max[k]); } } }
+        if (u) boxes.set(id, u);
+      } catch (e) { if (failed++ < 3) log("getHierarchyChildren", e); }
+      finally { if (++done % 25 === 0) setStatus("Reading " + label + " structure geometry… " + done + " / " + missing.length); }
+    };
+    for (let i = 0; i < missing.length; i += 8) await Promise.all(missing.slice(i, i + 8).map(one));
+    log(label + ": boxes now " + boxes.size + " of " + need.length + " needed");
+  }
+  const items = C.parseObjects(objs, { modelId: found.modelId, unitM: UNIT_M[$("units").value], boxes, revit });
   const entry = { items, count: objs.length, name: m.name, modelId: found.modelId, ids: found.ids };
   cache.set(m.id, entry);
   return entry;
