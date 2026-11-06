@@ -122,7 +122,7 @@
     <div class="tiles" id="tiles" hidden>
       <div class="tile"><div class="t">Overall completion</div><div class="big" id="t-overall">-</div><div class="s" id="t-overall-s"></div></div>
       <div class="tile"><div class="t">Pipe complete by design length</div><div class="big" id="t-pipes">-</div><div class="s" id="t-pipes-s"></div></div>
-      <div class="tile"><div class="t">Structures / other</div><div class="big" id="t-points">-</div><div class="s" id="t-points-s"></div></div>
+      <div class="tile"><div class="t">Structures</div><div class="big" id="t-points">-</div><div class="s" id="t-points-s"></div></div>
       <div class="tile"><div class="t">Model-to-model</div><div class="big" id="t-model">-</div><div class="s" id="t-model-s"></div></div>
     </div>
 
@@ -275,7 +275,7 @@ function fillCategories(items) {
   const keep = new Set([...document.querySelectorAll("#cats input:checked")].map(i => i.value));
   const had = document.querySelectorAll("#cats input").length > 0;
   const box = $("cats"); box.innerHTML = "";
-  for (const c of [...new Set(items.map(i => i.category))].sort()) {
+  for (const c of [...new Set(items.filter(C.isNetworkObject).map(i => i.category))].sort()) {
     const lab = document.createElement("label"); lab.className = "inline";
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.value = c; cb.checked = !had || keep.has(c);
     cb.addEventListener("change", () => { if (!busy) compareOnly(); });
@@ -311,7 +311,7 @@ function compareOnly() {
   result = C.compare(P.items, A.items, opt);
   result.meta = { proposedName: P.name, asBuiltName: A.name, proposedCount: P.count, asBuiltCount: A.count, generated: new Date().toLocaleString() };
   render();
-  setStatus("Compared " + result.items.length + " proposed objects against " + A.items.length + " as-built objects. " + result.asBuiltOnly.length + " as-built objects had no proposed counterpart.", "ok");
+  setStatus("Compared " + result.items.length + " proposed pipes/structures against " + result.modelAsBuiltCount + " as-built pipes/structures (" + (result.ignored.length + result.asBuiltIgnored) + " objects that are not pipes or structures ignored). " + result.asBuiltOnly.length + " as-built objects had no proposed counterpart.", "ok");
   for (const id of ["copy", "csv", "report"]) $(id).disabled = false;
 }
 
