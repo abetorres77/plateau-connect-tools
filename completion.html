@@ -123,7 +123,6 @@
       <div class="tile"><div class="t">Overall completion</div><div class="big" id="t-overall">-</div><div class="s" id="t-overall-s"></div></div>
       <div class="tile"><div class="t">Pipe complete by design length</div><div class="big" id="t-pipes">-</div><div class="s" id="t-pipes-s"></div></div>
       <div class="tile"><div class="t">Structures</div><div class="big" id="t-points">-</div><div class="s" id="t-points-s"></div></div>
-      <div class="tile"><div class="t">Model-to-model</div><div class="big" id="t-model">-</div><div class="s" id="t-model-s"></div></div>
     </div>
 
     <div class="card" id="res-card" hidden>
@@ -345,7 +344,6 @@ function render() {
   $("t-overall").textContent = C.pct(C.pctByCount(r.overall)); $("t-overall-s").textContent = r.overall.complete + " of " + r.overall.count + " items complete";
   $("t-pipes").textContent = C.pct(C.pctByLength(r.pipes)); $("t-pipes-s").textContent = C.lenF(r.pipes.installedLen) + " of " + C.lenF(r.pipes.proposedLen) + " LF";
   $("t-points").textContent = C.pct(C.pctByCount(r.points)); $("t-points-s").textContent = r.points.complete + " of " + r.points.count + " complete";
-  $("t-model").textContent = C.pct(r.modelPctByCount); $("t-model-s").textContent = r.modelAsBuiltCount + " as-built of " + r.modelProposedCount + " proposed objects";
   renderTable();
 }
 const TH = {
