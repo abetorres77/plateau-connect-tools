@@ -212,6 +212,24 @@
     </div>
   </div>
 
+  <div id="view-paving">
+    <div class="card">
+      <h2>Paving &amp; Concrete &mdash; asphalt, sidewalk, curb &amp; slab takeoff</h2>
+      <p class="muted">Pulls paving quantities straight from the models loaded in the <strong>3D Viewer</strong>: asphalt SF / SY and tons by pavement type and thickness, concrete sidewalk SF and CY, curb &amp; gutter LF by type, slabs and pads SF and CY. Areas are the model's plan areas (Revit floors); pieces modelled without quantities (in-place families) are estimated from their bounding boxes and flagged. Click a table row to select those objects in the model; export summary or detail CSV.</p>
+      <p>Because it reads the loaded model geometry, the tool runs inside the 3D Viewer rather than on this page:</p>
+      <ol class="steps">
+        <li>Open the 3D Viewer and load the road / paving model(s) you want to measure.</li>
+        <li>Click the <strong>Plateau Tools</strong> icon (black &amp; gold) at the bottom of the viewer&#39;s left toolbar and pick <strong>Paving &amp; Concrete</strong>.</li>
+        <li>Check the models to include, pick the scope, then <strong>Run takeoff</strong>. Fix a type's category or pay thickness in the Types tab.</li>
+      </ol>
+      <div class="row">
+        <button id="btn-open-viewer-paving">Open the 3D Viewer</button>
+        <span class="muted">Opens this project&#39;s 3D Viewer with Paving &amp; Concrete as the active tool.</span>
+      </div>
+      <div id="paving-status" class="muted"></div>
+    </div>
+  </div>
+
   <div id="view-launcher" style="display:none">
     <div class="card">
       <h2>Plateau Tools</h2>
@@ -220,6 +238,7 @@
       <div class="row"><button class="launch" data-tool="points" style="width:100%;text-align:left">Point Search<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Find points by number or description and zoom to them</span></button></div>
       <div class="row"><button class="launch" data-tool="props" style="width:100%;text-align:left">Object Properties<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Description, material, size, layer, elevations and coordinates of the selected objects</span></button></div>
       <div class="row"><button class="launch" data-tool="completion" style="width:100%;text-align:left">Progress %<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Percent complete: proposed model vs as-built model, by pipe length and structure count</span></button></div>
+      <div class="row"><button class="launch" data-tool="paving" style="width:100%;text-align:left">Paving &amp; Concrete<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Asphalt SF / SY / tons, sidewalk and slab SF / CY, curb LF by type from the loaded models</span></button></div>
     </div>
   </div>
 
@@ -246,7 +265,7 @@ const $ = (id) => document.getElementById(id);
 const setStatus = (msg, cls = "") => { const s = $("status"); s.textContent = msg; s.className = cls; };
 
 function show(view) {
-  for (const v of ["connecting", "extractor", "convert", "qto", "points", "props", "completion", "about", "launcher"]) {
+  for (const v of ["connecting", "extractor", "convert", "qto", "points", "props", "completion", "paving", "about", "launcher"]) {
     $("view-" + v).style.display = (v === view) ? "block" : "none";
   }
 }
@@ -270,6 +289,7 @@ async function init() {
       else if (cmd === "points") show("points");
       else if (cmd === "props") show("props");
       else if (cmd === "completion") show("completion");
+      else if (cmd === "paving") show("paving");
       else show("extractor");
     } else if (event === "extension.accessToken") {
       const t = tokenFrom(args && args.data !== undefined ? args.data : args);
@@ -294,7 +314,7 @@ async function init() {
     // the project page's "Open the 3D Viewer" buttons pre-select a tool through localStorage.
     let tool = "menu";
     try { tool = localStorage.getItem("plateau:viewerTool") || "menu"; localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ }
-    if (tool === "qto" || tool === "points" || tool === "props" || tool === "completion") { location.replace("./" + tool + ".html?v=" + Date.now()); return; }
+    if (tool === "qto" || tool === "points" || tool === "props" || tool === "completion" || tool === "paving") { location.replace("./" + tool + ".html?v=" + Date.now()); return; }
     show("launcher");
     return;
   }
@@ -309,6 +329,7 @@ async function init() {
       { title: "Point Search", icon: ICON, command: "points" },
       { title: "Object Properties", icon: ICON, command: "props" },
       { title: "Progress %", icon: ICON, command: "completion" },
+      { title: "Paving & Concrete", icon: ICON, command: "paving" },
       { title: "File Converter", icon: ICON, command: "convert" },
       { title: "QTO Takeoff", icon: ICON, command: "qto" },
       { title: "About", icon: ICON, command: "about" }
@@ -725,6 +746,7 @@ for (const b of document.querySelectorAll("button.launch")) b.addEventListener("
 $("btn-open-viewer-points").addEventListener("click", () => openViewer("points", $("points-status")));
 $("btn-open-viewer-props").addEventListener("click", () => openViewer("props", $("props-status")));
 $("btn-open-viewer-completion").addEventListener("click", () => openViewer("completion", $("completion-status")));
+$("btn-open-viewer-paving").addEventListener("click", () => openViewer("paving", $("paving-status")));
 $("btn-extract").addEventListener("click", extract);
 $("btn-download").addEventListener("click", download);
 $("btn-tflx").addEventListener("click", downloadTflx);
