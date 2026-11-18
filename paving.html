@@ -80,7 +80,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18</span></header>
+<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18b</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -747,6 +747,9 @@ function section(parent, title, node, note) {
   if (note) { const p = document.createElement("p"); p.className = "muted"; p.textContent = note; s.appendChild(p); }
   s.appendChild(node); parent.appendChild(s);
 }
+// editable pay thickness (inches) per type: drives asphalt tons and concrete CY; blank / 0 = back to the model thickness
+const payInput = (label, val) => { const i = document.createElement("input"); i.type = "number"; i.step = "0.25"; i.min = "0"; i.value = val; i.title = "Pay thickness in inches - edit to change tons / CY (blank = model thickness)";
+  i.addEventListener("change", () => { const v = +i.value; if (v > 0) payThk[label] = v; else delete payThk[label]; saveOverrides(); aggregate(); render(); }); return i; };
 const estPill = (g) => { if (!g.est) return ""; const s = document.createElement("span"); s.className = "pill est"; s.textContent = "bbox " + g.est + "/" + g.count; s.title = "Estimated from bounding boxes (no Area / Length in the model)"; return s; };
 const layers = (g) => g.mats.join(" + ");
 
@@ -773,14 +776,14 @@ function render() {
   const Sm = $("tab-summary"); Sm.innerHTML = "";
   const thkH = "Thk (" + U.thk + ")", payH = "Pay (in)";
   if (A.length) section(Sm, "Asphalt paving by type & thickness", table(
-    [{ h: "Type", f: g => g.label }, { h: "Layers", f: g => layers(g) }, { h: thkH, f: g => fmtThk(g.thk), num: true }, { h: payH, f: g => fmt(g.pay, 2), num: true }, { h: "Count", f: g => g.count, num: true },
+    [{ h: "Type", f: g => g.label }, { h: "Layers", f: g => layers(g) }, { h: thkH, f: g => fmtThk(g.thk), num: true }, { h: payH, f: g => payInput(g.label, g.pay), num: true }, { h: "Count", f: g => g.count, num: true },
      { h: U.area, f: g => fmt(toArea(g.area), 0), num: true }, { h: "SY", f: g => isM() ? "" : fmt(toArea(g.area) / 9, 0), num: true }, { h: massLabel(), f: g => fmt(massOf(g), 0), num: true }, { h: "Est.", f: g => estPill(g) }],
     A, { Type: "TOTAL", Count: sum(A, "count"), [U.area]: fmt(toArea(sum(A, "area")), 0), SY: isM() ? "" : fmt(toArea(sum(A, "area")) / 9, 0), [massLabel()]: fmt(sum(A.map(g => ({ m: massOf(g) })), "m"), 0) }),
-    "Tons = SY x pay thickness (in) x " + (+$("lbsyin").value || 110) + " lb/SY/in / 2000. Thk = the floor type's total thickness in the model (all layers); set the asphalt pay thickness per type in the Types tab.");
-  for (const [cat, title, note] of [[CAT.SIDEWALK, "Concrete sidewalk by type & thickness", "CY = plan area x pay thickness (defaults to the model thickness, which may include the base layer — see Layers)."], [CAT.SLAB, "Concrete slabs & pads by type & thickness", "CY = plan area x pay thickness."], [CAT.OTHERPAV, "Other paving (gravel, pavers, base) by type & thickness", "CY = plan area x pay thickness."]]) {
+    "Tons = SY x pay thickness (in) x " + (+$("lbsyin").value || 110) + " lb/SY/in / 2000. Thk = the floor type's total thickness in the model (all layers, e.g. asphalt + gravel); type the asphalt pay thickness in the Pay box to get the tons you will quote.");
+  for (const [cat, title, note] of [[CAT.SIDEWALK, "Concrete sidewalk by type & thickness", "CY = plan area x pay thickness. Edit the Pay box when the model thickness includes the base layer (see Layers)."], [CAT.SLAB, "Concrete slabs & pads by type & thickness", "CY = plan area x pay thickness."], [CAT.OTHERPAV, "Other paving (gravel, pavers, base) by type & thickness", "CY = plan area x pay thickness."]]) {
     const G = byCat(cat); if (!G.length) continue;
     section(Sm, title, table(
-      [{ h: "Type", f: g => g.label }, { h: "Layers", f: g => layers(g) }, { h: thkH, f: g => fmtThk(g.thk), num: true }, { h: payH, f: g => fmt(g.pay, 2), num: true }, { h: "Count", f: g => g.count, num: true },
+      [{ h: "Type", f: g => g.label }, { h: "Layers", f: g => layers(g) }, { h: thkH, f: g => fmtThk(g.thk), num: true }, { h: payH, f: g => payInput(g.label, g.pay), num: true }, { h: "Count", f: g => g.count, num: true },
        { h: U.area, f: g => fmt(toArea(g.area), 0), num: true }, { h: "SY", f: g => isM() ? "" : fmt(toArea(g.area) / 9, 0), num: true }, { h: U.vol, f: g => fmt(toVol(g.vol), 1), num: true }, { h: "Est.", f: g => estPill(g) }],
       G, { Type: "TOTAL", Count: sum(G, "count"), [U.area]: fmt(toArea(sum(G, "area")), 0), SY: isM() ? "" : fmt(toArea(sum(G, "area")) / 9, 0), [U.vol]: fmt(toVol(sum(G, "vol")), 1) }), note);
   }
@@ -801,8 +804,7 @@ function render() {
   const catSel = (r) => { const s = document.createElement("select"); const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "(auto) " + (cat0Of.get(r.label) || CAT.OTHER); s.appendChild(o0);
     for (const c of PAVING_CATS.concat([CAT.OTHER])) { const o = document.createElement("option"); o.value = c; o.textContent = c; s.appendChild(o); }
     s.value = overrides[r.label] || ""; s.addEventListener("change", () => { if (s.value) overrides[r.label] = s.value; else delete overrides[r.label]; saveOverrides(); aggregate(); render(); }); return s; };
-  const payIn = (r) => { if (r.cat === CAT.OTHER || r.isCurb) return ""; const i = document.createElement("input"); i.type = "number"; i.step = "0.25"; i.min = "0"; i.value = r.pay; i.title = "Pay thickness in inches (tons / CY)";
-    i.addEventListener("change", () => { const v = +i.value; if (v > 0) payThk[r.label] = v; else delete payThk[r.label]; saveOverrides(); aggregate(); render(); }); return i; };
+  const payIn = (r) => (r.cat === CAT.OTHER || r.isCurb) ? "" : payInput(r.label, r.pay);
   section(Ty, "Types found (" + typeRows.length + ") — change a category or pay thickness here", table(
     [{ h: "Type", f: r => r.label }, { h: "Revit category", f: r => r.rcat }, { h: "Layers", f: r => r.mats.join(" + ") }, { h: "Count", f: r => r.count, num: true }, { h: U.area, f: r => r.area ? fmt(toArea(r.area), 0) : "", num: true }, { h: "Category", f: r => catSel(r) }, { h: payH, f: r => payIn(r) }],
     typeRows), "Choices are remembered per model set on this browser. Pay thickness drives asphalt tons and concrete CY (blank = model thickness).");
