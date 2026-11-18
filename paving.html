@@ -80,7 +80,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18c</span></header>
+<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18d</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -121,6 +121,12 @@
         <button id="btn-inspect" class="secondary" title="Dump every property of the first object selected in the viewer">Inspect selected object</button>
         <button id="btn-inv" class="ghost" title="Copy every property key with counts and sample values (diagnostic)">Copy inventory</button>
         <span class="muted" id="sel-info"></span>
+      </div>
+      <div class="row">
+        <input type="file" id="qty-file" accept=".json,application/json" hidden>
+        <button id="btn-qty" class="secondary" title="Exact plan areas and curb centerline lengths computed from the model geometry by TrbDump.exe (<model>.qty.json)">Load geometry quantities (.qty.json)</button>
+        <button id="btn-qty-clear" class="ghost" hidden>Forget</button>
+        <span class="muted" id="qty-info">No geometry file loaded: pieces without model quantities are estimated from bounding boxes.</span>
       </div>
       <div id="status">Ready.</div>
     </div>
@@ -270,6 +276,7 @@ let overrides = {};                       // type label -> category override
 let payThk = {};                          // type label -> pay thickness (inches)
 let agg = null;
 let rowIndex = new Map();                 // "modelId|runtimeId" -> interpreted row (elements and their geometry nodes)
+let qty = null;                           // geometry quantities from TrbDump (<model>.qty.json): { byGuid, byId, model, count }
 let lastSel = null;                       // last viewer selection, re-rendered when units change
 let lastScopeLabel = "";
 let geomStats = { solids: 0, boxes: 0, elementsBoxed: 0, viaParents: false, viaChildren: 0 };
@@ -538,7 +545,32 @@ function buildMappingUI() {
 function modelHash() { const ids = checkedModelIds().sort().join("|"); let h = 0; for (let i = 0; i < ids.length; i++) h = (h * 31 + ids.charCodeAt(i)) >>> 0; return h.toString(16); }
 const LS = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || "null"); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } };
 function saveMapping() { LS("ppav.map." + modelHash(), mapping); }
-function loadMapping() { mapping = LS("ppav.map." + modelHash()) || {}; overrides = LS("ppav.cat." + modelHash()) || {}; payThk = LS("ppav.thk." + modelHash()) || {}; }
+function loadMapping() { mapping = LS("ppav.map." + modelHash()) || {}; overrides = LS("ppav.cat." + modelHash()) || {}; payThk = LS("ppav.thk." + modelHash()) || {};
+  const q = LS("ppav.qty." + modelHash()); if (q && q.elements) setQty(q, false); else if (!qty) showQty(); }
+
+// ---------- geometry quantities (TrbDump sidecar) ----------
+// {"format":"plateau-paving-qty/1","model":..,"units":"m","elements":[{guid,id,category,type,materials,plan,footprint,vol,len,width,bbox}]}
+// plan / footprint m², vol m³, len = centerline length m from the plan-footprint skeleton, width = footprint / len.
+function setQty(obj, persist) {
+  if (!obj || obj.format !== "plateau-paving-qty/1" || !Array.isArray(obj.elements)) throw new Error("Not a TrbDump quantities file (expected format plateau-paving-qty/1).");
+  const byGuid = new Map(), byId = new Map();
+  for (const e of obj.elements) { if (e.guid) byGuid.set(e.guid, e); if (e.id) byId.set(String(e.id), e); }
+  qty = { byGuid, byId, model: obj.model || "", count: obj.elements.length, generated: obj.generated || "" };
+  if (persist) LS("ppav.qty." + modelHash(), obj);
+  showQty();
+}
+function showQty() {
+  $("qty-info").textContent = qty ? "Geometry quantities loaded: " + qty.count + " elements from " + qty.model + (qty.generated ? " (" + qty.generated.slice(0, 10) + ")" : "") + " — exact areas and curb centerline lengths replace bounding-box estimates." : "No geometry file loaded: pieces without model quantities are estimated from bounding boxes.";
+  $("btn-qty-clear").hidden = !qty;
+}
+function qtyFor(guid, elemId) { if (!qty) return null; return (guid && qty.byGuid.get(guid)) || (elemId && qty.byId.get(String(elemId))) || null; }
+$("btn-qty").addEventListener("click", () => $("qty-file").click());
+$("qty-file").addEventListener("change", async (ev) => {
+  const f = ev.target.files && ev.target.files[0]; ev.target.value = ""; if (!f) return;
+  try { setQty(JSON.parse(await f.text()), true); setStatus("Loaded " + qty.count + " geometry quantities from " + f.name + ".", "ok"); if (agg) { aggregate(); render(); } }
+  catch (e) { setStatus("Could not load " + f.name + ": " + (e.message || e), "err"); }
+});
+$("btn-qty-clear").addEventListener("click", () => { qty = null; try { localStorage.removeItem("ppav.qty." + modelHash()); } catch (e) { /* ignore */ } showQty(); if (agg) { aggregate(); render(); } });
 function saveOverrides() { LS("ppav.cat." + modelHash(), overrides); LS("ppav.thk." + modelHash(), payThk); }
 
 // ---------- classification keywords ----------
@@ -678,13 +710,28 @@ function interpret(o, mu) {
   if (thk == null && dims && dims.dz > 0 && dims.dz <= 0.6) { thk = dims.dz; thkSrc = "bbox"; }
   if (len == null && dims) { len = Math.sqrt(dims.dx * dims.dx + dims.dy * dims.dy); lenSrc = "bbox"; }
   if (vol == null && area && thk && areaSrc === "model" && thkSrc === "model") { vol = area * thk; volSrc = "A×t"; }
+  // TrbDump geometry quantities: exact plan area / centerline length for elements the model gives no quantity for
+  const guid = str(o.flat.get("Element · IfcGUID")), elemIdStr = str(o.flat.get("Element · Id")) || str(o.flat.get("Element ID · Value"));
+  const q = qtyFor(guid, elemIdStr);
+  let meshWidth = null;
+  if (q) {
+    if (areaSrc !== "model" && q.plan > 0) { area = q.plan; areaSrc = "mesh"; }
+    if (lenSrc !== "model" && q.len != null) {
+      // a very short piece thins to almost nothing: its footprint over a 30" section is the better length
+      const blob = q.width > 1.2 || q.len < 0.3;
+      len = blob ? Math.max(q.len, q.footprint / 0.762) : q.len; lenSrc = blob ? "mesh (short piece)" : "mesh"; meshWidth = blob ? null : q.width;
+    }
+    if (volSrc !== "model" && q.vol > 0) { vol = q.vol; volSrc = "mesh"; }
+    if (thkSrc !== "model" && q.vol > 0 && q.plan > 0 && q.vol / q.plan <= 0.6) { thk = q.vol / q.plan; thkSrc = "mesh V/A"; }
+  }
   // type label: system family type name; in-place pieces are grouped by their material (their type names are unique per element)
   let label;
   if (inplace) label = (mats.length ? mats.slice().sort((a, b) => a.localeCompare(b)).join(" + ") : "no material") + " (in-place " + (revitCategory(o) || "element") + ")";
   else label = f.type || f.family || o.pname || o.pdesc || "(no type)";
   const cat = overrides[label] || cat0;
   const Wd = lengthMeters(f.widthP, mu), Ht = lengthMeters(f.heightP, mu);
-  const section = Wd && Ht ? Math.round(Wd / 0.0254) + '"x' + Math.round(Ht / 0.0254) + '"' : "";
+  // curb section: W x H from the model, else the mesh mean width snapped to the nearest 6" (24", 30", 6"...)
+  const section = Wd && Ht ? Math.round(Wd / 0.0254) + '"x' + Math.round(Ht / 0.0254) + '"' : meshWidth ? Math.max(6, Math.round(meshWidth / 0.0254 / 6) * 6) + '" wide' : "";
   return { o, cat, cat0, label, type: f.type, family: f.family, mats, inplace, hasQty, area, areaSrc, thk, thkSrc, vol, volSrc, len, lenSrc, section,
     perim: lengthMeters(f.perimP, mu), dims, ignoreKind: cat === CAT.IGNORED ? (revitCategory(o) || revitNodeKind(o)) : "",
     elemId: str(o.flat.get("Element · Id")) || str(o.flat.get("Element ID · Value")), guid: str(o.flat.get("Element · IfcGUID")) };
@@ -724,7 +771,7 @@ function groupInto(target, rows) {
     if (r.len) { g.len += r.len; if (r.lenSrc === "bbox") g.lenEst++; }
     if (r.vol && r.volSrc === "model") g.volModel += r.vol;
     if (r.thk && r.thkSrc === "model") { g.thkSum += r.thk; g.thkN++; }
-    if ((r.cat === CAT.CURB && r.lenSrc === "bbox") || (r.cat !== CAT.CURB && r.areaSrc !== "model" && r.areaSrc !== "V/t")) { g.est++; target.est++; }
+    if ((r.cat === CAT.CURB && r.lenSrc === "bbox") || (r.cat !== CAT.CURB && r.areaSrc === "bbox")) { g.est++; target.est++; }
   }
   for (const g of target.groups.values()) { g.thk = g.thkN ? g.thkSum / g.thkN : null; g.vol = g.cat === CAT.CURB ? g.volModel : g.area * g.pay * 0.0254; }
 }
@@ -849,7 +896,7 @@ function render() {
   if (C.length) section(Sm, "Curb & gutter by type", table(
     [{ h: "Type", f: g => g.label }, { h: "Material", f: g => layers(g) }, { h: "Section", f: g => g.section }, { h: "Count", f: g => g.count, num: true }, { h: U.len, f: g => fmt(toLen(g.len), 0), num: true }, { h: U.vol + " (model)", f: g => g.volModel ? fmt(toVol(g.volModel), 1) : "", num: true }, { h: "Est.", f: g => estPill(g) }],
     C, { Type: "TOTAL", Count: sum(C, "count"), [U.len]: fmt(toLen(sum(C, "len")), 0), [U.vol + " (model)"]: fmt(toVol(sum(C, "volModel")), 1) }),
-    "LF = the element's Length where the model has one (walls, slab edges), else the horizontal diagonal of its bounding box (straight runs exact, curved runs under-measured). In-place pieces are grouped by material.");
+    "LF = the element's Length where the model has one (walls, slab edges), else the centerline length from a loaded geometry quantities file (exact for straight, curved, L- and U-shaped runs), else the horizontal diagonal of its bounding box — flagged bbox: straight runs only, curved runs and runs around islands come out short. In-place pieces are grouped by material; Section = model W x H or the mesh width.");
   let note = "";
   if (agg.est) note += agg.est + " element(s) carry no Area / Length and were estimated from bounding boxes (in-place families). ";
   if (agg.ignoredCount) note += agg.ignoredCount + " Revit hierarchy / geometry node(s) ignored.";
@@ -997,6 +1044,7 @@ window.addEventListener("message", async (e) => {
     else if (d.plateauCmd === "inventory") { const text = buildInventory(); const from = Number.isInteger(d.from) ? d.from : 0; reply({ length: text.length, from, text: text.slice(from, from + 60000) }); }
     else if (d.plateauCmd === "status") reply({ status: $("status").textContent, objects: objects.length, build: $("ver").textContent, models: models.map(m => m.name), text: "models=" + models.length });
     else if (d.plateauCmd === "summary") reply({ text: agg ? summaryRows("\t").join("\n") : "" });
+    else if (d.plateauCmd === "loadQty") { setQty(typeof d.text === "string" ? JSON.parse(d.text) : d.qty, true); if (agg) { aggregate(); render(); } reply({ count: qty.count, model: qty.model }); }
   } catch (err) { reply({ error: String((err && err.message) || err) }); }
 });
 
