@@ -19,11 +19,12 @@ Quantifies **asphalt paving (SF / SY / tons)**, **concrete sidewalk (SF / CY)**,
 2. Click the **Plateau Tools** icon (black & gold) at the bottom of the viewer's left toolbar → **Paving & Concrete**. (Project side: the Plateau Tools dropdown has a *Paving & Concrete* entry whose "Open the 3D Viewer" button lands on it.)
 3. Check the models, pick the scope (everything, or only the viewer selection) and the units, then **Run takeoff**.
 4. **Summary** tab: asphalt by type & thickness (SF, SY, tons), sidewalk / slab / other paving (SF, SY, CY), curb by type (LF). Each row has an editable **Pay (in)** box (build b): type the thickness you will quote (e.g. 5 for the asphalt lifts when the model's 14 in includes the gravel base) and the tons / CY update at once; blank = the model's thickness. **Types** tab: every type found with a category dropdown (override the automatic class) and the same pay thickness box. **Detail**: one row per element with the source of each number. **Unclassified**: what was left out.
-5. Click any row to select those objects in the viewer (tick *Zoom to objects* in the mapping card to also fly there). **Download summary CSV / detail CSV** or **Copy summary for Excel**.
+5. **Selected in viewer** card (build c): select anything in the 3D Viewer (floors, curb pieces, or their solids) and the card shows that selection's quantities live, by type, from the last run - no re-run needed. *Copy selection for Excel* copies it. The *Scope: only objects selected* option still exists for reading a selection from scratch.
+6. Click any row to select those objects in the viewer (tick *Zoom to objects* in the mapping card to also fly there). **Download summary CSV / detail CSV** or **Copy summary for Excel**.
 
 Overrides, pay thicknesses and property mappings are remembered per model set in the browser. **Inspect selected object** prints every property of one object (plus its bounding box); **Copy inventory** copies a JSON of every property key and example objects for a new model type.
 
-## How it measures (build v2026.11.18b)
+## How it measures (build v2026.11.18c)
 
 **Revit models (NWC / TrimBIM).** Only nodes with `Element · Category` are elements. A floor's geometry hangs below it (element → `Floors` container → `Solid` leaves, one per material layer with `Revit Material · Name`). The tool resolves that tree with one `getHierarchyParents` call per 250 nodes (reply in input order), or, if the viewer does not answer in order, one `getHierarchyChildren(recursive)` call per element; then reads the solids' bounding boxes (`getObjectBoundingBoxes`) and unions them onto the element. Both paths and a viewer that boxes elements itself are harness-verified and give identical totals.
 
