@@ -80,7 +80,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18f</span></header>
+<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18g</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -575,6 +575,9 @@ $("qty-file").addEventListener("change", async (ev) => {
 $("btn-qty-clear").addEventListener("click", () => { qty = null; try { localStorage.removeItem("ppav.qty." + modelHash()); } catch (e) { /* ignore */ } showQty(); if (agg) { aggregate(); render(); } });
 function saveOverrides() { LS("ppav.cat." + modelHash(), overrides); LS("ppav.thk." + modelHash(), payThk); LS("ppav.cw." + modelHash(), curbW); LS("ppav.cs." + modelHash(), curbSec); }
 const DEFAULT_CURB_W_IN = 30;             // cg-6 curb & gutter; override per type in the Types tab
+// default curb section when neither the model nor a geometry file carries a volume: the modelled 30" cg-6 section measured
+// 1.68 CF per LF on STC W-C (6" vertical curb 0.55); scaled by the width set for the type. Override per type in the Types tab.
+const defaultCurbSec = (wIn) => wIn <= 8 ? 0.55 : 1.68 * wIn / 30;
 
 // ---------- classification keywords ----------
 
@@ -747,7 +750,7 @@ function interpret(o, mu) {
   }
   const cat = overrides[label] || cat0;
   // curb concrete without a model / geometry volume: the per-type section (CF per LF) x length
-  if (cat === CAT.CURB && (vol == null || volSrc === "A×t") && len && curbSec[label] > 0) { vol = len * curbSec[label] * 0.09290304; volSrc = "section"; }
+  if (cat === CAT.CURB && (vol == null || volSrc === "A×t") && len) { const sec = curbSec[label] > 0 ? curbSec[label] : defaultCurbSec(wIn); vol = len * sec * 0.09290304; volSrc = curbSec[label] > 0 ? "section" : "section (default)"; }
   const Wd = lengthMeters(f.widthP, mu), Ht = lengthMeters(f.heightP, mu);
   // curb section: W x H from the model, else the mesh mean width snapped to the nearest 6" (24", 30", 6"...)
   const section = Wd && Ht ? Math.round(Wd / 0.0254) + '"x' + Math.round(Ht / 0.0254) + '"' : meshWidth ? Math.max(6, Math.round(meshWidth / 0.0254 / 6) * 6) + '" wide' : (cat === CAT.CURB && lenSrc === "bbox" ? wIn + '" (set)' : "");
@@ -788,7 +791,7 @@ function groupInto(target, rows) {
     for (const m of r.mats) if (!g.mats.includes(m)) g.mats.push(m);
     if (r.area) { g.area += r.area; if (r.areaSrc === "bbox" || r.areaSrc === "surf/2") g.areaEst++; }
     if (r.len) { g.len += r.len; if (r.lenSrc === "bbox") g.lenEst++; }
-    if (r.vol && (r.volSrc === "model" || r.volSrc === "mesh" || r.volSrc === "section")) { g.volModel += r.vol; if (r.volSrc === "mesh") g.volMesh = (g.volMesh || 0) + 1; }
+    if (r.vol && (r.volSrc === "model" || r.volSrc === "mesh" || r.volSrc === "section" || r.volSrc === "section (default)")) { g.volModel += r.vol; if (r.volSrc === "mesh") g.volMesh = (g.volMesh || 0) + 1; if (r.volSrc === "section (default)") g.volDefault = (g.volDefault || 0) + 1; }
     if (r.thk && r.thkSrc === "model") { g.thkSum += r.thk; g.thkN++; }
     if ((r.cat === CAT.CURB && r.lenSrc === "bbox") || (r.cat !== CAT.CURB && r.areaSrc === "bbox")) { g.est++; target.est++; }
   }
@@ -877,7 +880,7 @@ function renderSelection() {
   $("sel-n").textContent = rows.length + " element(s)";
   drawKpis($("sel-kpis"), kpiList(groups, sum(others, "count"), t.est));
   const qty = (g) => g.cat === CAT.CURB ? fmt(toLen(g.len), 0) + " " + U.len : fmt(toArea(g.area), 0) + " " + U.area + (isM() ? "" : " / " + fmt(toArea(g.area) / 9, 0) + " SY");
-  const second = (g) => g.cat === CAT.CURB ? (g.volModel ? fmt(toVol(g.volModel), 1) + " " + U.vol : "") : g.cat === CAT.ASPHALT ? fmt(massOf(g), 0) + " " + massLabel() : fmt(toVol(g.vol), 1) + " " + U.vol;
+  const second = (g) => g.cat === CAT.CURB ? (g.volModel ? fmt(toVol(g.volModel), 2) + " " + U.vol + (g.volDefault ? " (default section)" : "") : "") : g.cat === CAT.ASPHALT ? fmt(massOf(g), 0) + " " + massLabel() : fmt(toVol(g.vol), 1) + " " + U.vol;
   const list = groups.map(g => ({ cat: g.cat, label: g.label, pay: g.pay, count: g.count, q: qty(g), s: second(g), refs: g.refs, est: g.est }))
     .concat(others.map(o => ({ cat: CAT.OTHER, label: o.label, pay: "", count: o.count, q: o.area ? fmt(toArea(o.area), 0) + " " + U.area : "", s: "", refs: o.refs, est: 0 })));
   $("sel-table").innerHTML = "";
@@ -913,7 +916,7 @@ function render() {
       G, { Type: "TOTAL", Count: sum(G, "count"), [U.area]: fmt(toArea(sum(G, "area")), 0), SY: isM() ? "" : fmt(toArea(sum(G, "area")) / 9, 0), [U.vol]: fmt(toVol(sum(G, "vol")), 1) }), note);
   }
   if (C.length) section(Sm, "Curb & gutter by type", table(
-    [{ h: "Type", f: g => g.label }, { h: "Material", f: g => layers(g) }, { h: "Section", f: g => g.section }, { h: "Count", f: g => g.count, num: true }, { h: U.len, f: g => fmt(toLen(g.len), 0), num: true }, { h: U.vol, f: g => g.volModel ? fmt(toVol(g.volModel), 1) : "", num: true }, { h: isM() ? "m³/m" : "CF/LF", f: g => g.volModel && g.len ? fmt(isM() ? g.volModel / g.len : (g.volModel * 35.3146667) / toLen(g.len), 2) : "", num: true }, { h: "Est.", f: g => estPill(g) }],
+    [{ h: "Type", f: g => g.label }, { h: "Material", f: g => layers(g) }, { h: "Section", f: g => g.section }, { h: "Count", f: g => g.count, num: true }, { h: U.len, f: g => fmt(toLen(g.len), 0), num: true }, { h: U.vol, f: g => g.volModel ? fmt(toVol(g.volModel), 1) : "", num: true }, { h: isM() ? "m³/m" : "CF/LF", f: g => g.volModel && g.len ? fmt(isM() ? g.volModel / g.len : (g.volModel * 35.3146667) / toLen(g.len), 2) : "", num: true }, { h: U.vol + " source", f: g => g.volDefault ? "default section" : g.volMesh ? "geometry" : g.volModel ? "model / set section" : "" }, { h: "Est.", f: g => estPill(g) }],
     C, { Type: "TOTAL", Count: sum(C, "count"), [U.len]: fmt(toLen(sum(C, "len")), 0), [U.vol]: fmt(toVol(sum(C, "volModel")), 1) }),
     "LF = horizontal length: the element's Length where the model has one (walls, slab edges), else the centerline length from a loaded geometry quantities file (exact for straight, curved, L- and U-shaped runs), else solved from the bounding box and the section width (Types tab, default 30\") — flagged bbox: exact for straight pieces, curved runs and runs around islands come out short. Concrete " + U.vol + " = the model's Volume, else the geometry file's envelope volume (top surface to underside of each piece), else the section CF/LF entered in the Types tab x LF; the CF/LF column is the resulting volume per foot. In-place pieces are grouped by material; Section = model W x H, the mesh width, or the width you set.");
   let note = "";
@@ -933,7 +936,8 @@ function render() {
     i.addEventListener("change", () => { const v = +i.value; if (v > 0) store[label] = v; else delete store[label]; saveOverrides(); aggregate(); render(); }); return i; };
   const payIn = (r) => r.cat === CAT.OTHER ? "" : r.isCurb ? (() => { const w = document.createElement("span"); w.style.whiteSpace = "nowrap";
       w.appendChild(numIn(curbW, r.label, curbW[r.label] || "", "1", "Curb section width in inches (default 30) - used to solve the length of pieces measured from bounding boxes")); w.appendChild(document.createTextNode('" wide, '));
-      w.appendChild(numIn(curbSec, r.label, curbSec[r.label] || "", "0.01", "Curb section in cubic feet per LF (e.g. 1.68 for the 30\" cg-6 curb & gutter) - gives CY for pieces without a model or geometry volume")); w.appendChild(document.createTextNode(" CF/LF")); return w; })() : payInput(r.label, r.pay);
+      const secIn = numIn(curbSec, r.label, curbSec[r.label] || "", "0.01", "Curb section in cubic feet per LF - gives CY for pieces without a model or geometry volume (blank = default " + defaultCurbSec(curbW[r.label] > 0 ? curbW[r.label] : DEFAULT_CURB_W_IN).toFixed(2) + ", the modelled cg-6 section scaled by width)"); secIn.placeholder = defaultCurbSec(curbW[r.label] > 0 ? curbW[r.label] : DEFAULT_CURB_W_IN).toFixed(2);
+      w.appendChild(secIn); w.appendChild(document.createTextNode(" CF/LF")); return w; })() : payInput(r.label, r.pay);
   section(Ty, "Types found (" + typeRows.length + ") — change a category or pay thickness here", table(
     [{ h: "Type", f: r => r.label }, { h: "Revit category", f: r => r.rcat }, { h: "Layers", f: r => r.mats.join(" + ") }, { h: "Count", f: r => r.count, num: true }, { h: U.area, f: r => r.area ? fmt(toArea(r.area), 0) : "", num: true }, { h: "Category", f: r => catSel(r) }, { h: payH, f: r => payIn(r) }],
     typeRows), "Choices are remembered per model set on this browser. Pay thickness drives asphalt tons and concrete CY (blank = model thickness). Curb rows take the section width (for lengths estimated from bounding boxes; default 30\") and the section in CF per LF (gives CY when neither the model nor a geometry file carries a volume).");
