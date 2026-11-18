@@ -80,7 +80,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18e</span></header>
+<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18f</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -274,6 +274,8 @@ let mapping = {};                         // field -> "" (auto) | explicit key
 let rules = null;                         // category -> keyword string
 let overrides = {};                       // type label -> category override
 let payThk = {};                          // type label -> pay thickness (inches)
+let curbW = {};                           // type label -> curb section width (inches) for the bounding-box length solve
+let curbSec = {};                         // type label -> curb section (CF per LF) for concrete without a model / geometry volume
 let agg = null;
 let rowIndex = new Map();                 // "modelId|runtimeId" -> interpreted row (elements and their geometry nodes)
 let qty = null;                           // geometry quantities from TrbDump (<model>.qty.json): { byGuid, byId, model, count }
@@ -545,7 +547,7 @@ function buildMappingUI() {
 function modelHash() { const ids = checkedModelIds().sort().join("|"); let h = 0; for (let i = 0; i < ids.length; i++) h = (h * 31 + ids.charCodeAt(i)) >>> 0; return h.toString(16); }
 const LS = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || "null"); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } };
 function saveMapping() { LS("ppav.map." + modelHash(), mapping); }
-function loadMapping() { mapping = LS("ppav.map." + modelHash()) || {}; overrides = LS("ppav.cat." + modelHash()) || {}; payThk = LS("ppav.thk." + modelHash()) || {};
+function loadMapping() { mapping = LS("ppav.map." + modelHash()) || {}; overrides = LS("ppav.cat." + modelHash()) || {}; payThk = LS("ppav.thk." + modelHash()) || {}; curbW = LS("ppav.cw." + modelHash()) || {}; curbSec = LS("ppav.cs." + modelHash()) || {};
   const q = LS("ppav.qty." + modelHash()); if (q && q.elements) setQty(q, false); else if (!qty) showQty(); }
 
 // ---------- geometry quantities (TrbDump sidecar) ----------
@@ -571,7 +573,8 @@ $("qty-file").addEventListener("change", async (ev) => {
   catch (e) { setStatus("Could not load " + f.name + ": " + (e.message || e), "err"); }
 });
 $("btn-qty-clear").addEventListener("click", () => { qty = null; try { localStorage.removeItem("ppav.qty." + modelHash()); } catch (e) { /* ignore */ } showQty(); if (agg) { aggregate(); render(); } });
-function saveOverrides() { LS("ppav.cat." + modelHash(), overrides); LS("ppav.thk." + modelHash(), payThk); }
+function saveOverrides() { LS("ppav.cat." + modelHash(), overrides); LS("ppav.thk." + modelHash(), payThk); LS("ppav.cw." + modelHash(), curbW); LS("ppav.cs." + modelHash(), curbSec); }
+const DEFAULT_CURB_W_IN = 30;             // cg-6 curb & gutter; override per type in the Types tab
 
 // ---------- classification keywords ----------
 
@@ -658,6 +661,19 @@ function volumeM3(p, mu) {
   return n;
 }
 const boxDims = (b) => b ? { dx: b.max.x - b.min.x, dy: b.max.y - b.min.y, dz: b.max.z - b.min.z } : null;
+// A straight run of length L and width W at angle t has a plan box dx = L cos t + W sin t, dy = L sin t + W cos t: solve L for a
+// known W (exact for straight pieces at any angle; a curved run still comes out short). Axis-aligned pieces: L = the long side.
+function straightLength(dx, dy, W) {
+  if (!(dx > 0 && dy > 0)) return null;
+  if (Math.min(dx, dy) <= W * 1.05) return Math.max(dx, dy);
+  let best = null;
+  for (let k = 1; k < 900; k++) {
+    const t = k * Math.PI / 1800, c = Math.cos(t), s = Math.sin(t);
+    const L1 = (dx - W * s) / c, L2 = (dy - W * c) / s, d = Math.abs(L1 - L2);
+    if (best === null || d < best[0]) best = [d, (L1 + L2) / 2];
+  }
+  return best && best[1] > 0 ? best[1] : Math.sqrt(dx * dx + dy * dy);
+}
 
 function classify(o, f, mats, inplace, hasQty) {
   const rc = revitCategory(o).toLowerCase();
@@ -708,7 +724,12 @@ function interpret(o, mu) {
   if (area == null && f.surfP) { const s = areaM2(f.surfP, mu); if (s) { area = s / 2; areaSrc = "surf/2"; } }
   if (area == null && dims && dims.dx > 0 && dims.dy > 0) { area = dims.dx * dims.dy; areaSrc = "bbox"; }
   if (thk == null && dims && dims.dz > 0 && dims.dz <= 0.6) { thk = dims.dz; thkSrc = "bbox"; }
-  if (len == null && dims) { len = Math.sqrt(dims.dx * dims.dx + dims.dy * dims.dy); lenSrc = "bbox"; }
+  // type label: system family type name; in-place pieces are grouped by their material set (their type names are unique per element)
+  let label;
+  if (inplace) label = (mats.length ? mats.slice().sort((a, b) => a.localeCompare(b)).join(" + ") : "no material") + " (in-place " + (revitCategory(o) || "element") + ")";
+  else label = f.type || f.family || o.pname || o.pdesc || "(no type)";
+  const wIn = curbW[label] > 0 ? curbW[label] : DEFAULT_CURB_W_IN;
+  if (len == null && dims) { len = straightLength(dims.dx, dims.dy, wIn * 0.0254); lenSrc = "bbox"; }
   if (vol == null && area && thk && areaSrc === "model" && thkSrc === "model") { vol = area * thk; volSrc = "A×t"; }
   // TrbDump geometry quantities: exact plan area / centerline length for elements the model gives no quantity for
   const guid = str(o.flat.get("Element · IfcGUID")), elemIdStr = str(o.flat.get("Element · Id")) || str(o.flat.get("Element ID · Value"));
@@ -724,14 +745,12 @@ function interpret(o, mu) {
     if (volSrc !== "model" && q.vol > 0) { vol = q.vol; volSrc = "mesh"; }
     if (thkSrc !== "model" && q.vol > 0 && q.plan > 0 && q.vol / q.plan <= 0.6) { thk = q.vol / q.plan; thkSrc = "mesh V/A"; }
   }
-  // type label: system family type name; in-place pieces are grouped by their material (their type names are unique per element)
-  let label;
-  if (inplace) label = (mats.length ? mats.slice().sort((a, b) => a.localeCompare(b)).join(" + ") : "no material") + " (in-place " + (revitCategory(o) || "element") + ")";
-  else label = f.type || f.family || o.pname || o.pdesc || "(no type)";
   const cat = overrides[label] || cat0;
+  // curb concrete without a model / geometry volume: the per-type section (CF per LF) x length
+  if (cat === CAT.CURB && (vol == null || volSrc === "A×t") && len && curbSec[label] > 0) { vol = len * curbSec[label] * 0.09290304; volSrc = "section"; }
   const Wd = lengthMeters(f.widthP, mu), Ht = lengthMeters(f.heightP, mu);
   // curb section: W x H from the model, else the mesh mean width snapped to the nearest 6" (24", 30", 6"...)
-  const section = Wd && Ht ? Math.round(Wd / 0.0254) + '"x' + Math.round(Ht / 0.0254) + '"' : meshWidth ? Math.max(6, Math.round(meshWidth / 0.0254 / 6) * 6) + '" wide' : "";
+  const section = Wd && Ht ? Math.round(Wd / 0.0254) + '"x' + Math.round(Ht / 0.0254) + '"' : meshWidth ? Math.max(6, Math.round(meshWidth / 0.0254 / 6) * 6) + '" wide' : (cat === CAT.CURB && lenSrc === "bbox" ? wIn + '" (set)' : "");
   return { o, cat, cat0, label, type: f.type, family: f.family, mats, inplace, hasQty, area, areaSrc, thk, thkSrc, vol, volSrc, len, lenSrc, section,
     perim: lengthMeters(f.perimP, mu), dims, ignoreKind: cat === CAT.IGNORED ? (revitCategory(o) || revitNodeKind(o)) : "",
     elemId: str(o.flat.get("Element · Id")) || str(o.flat.get("Element ID · Value")), guid: str(o.flat.get("Element · IfcGUID")) };
@@ -769,7 +788,7 @@ function groupInto(target, rows) {
     for (const m of r.mats) if (!g.mats.includes(m)) g.mats.push(m);
     if (r.area) { g.area += r.area; if (r.areaSrc === "bbox" || r.areaSrc === "surf/2") g.areaEst++; }
     if (r.len) { g.len += r.len; if (r.lenSrc === "bbox") g.lenEst++; }
-    if (r.vol && (r.volSrc === "model" || r.volSrc === "mesh")) { g.volModel += r.vol; if (r.volSrc === "mesh") g.volMesh = (g.volMesh || 0) + 1; }
+    if (r.vol && (r.volSrc === "model" || r.volSrc === "mesh" || r.volSrc === "section")) { g.volModel += r.vol; if (r.volSrc === "mesh") g.volMesh = (g.volMesh || 0) + 1; }
     if (r.thk && r.thkSrc === "model") { g.thkSum += r.thk; g.thkN++; }
     if ((r.cat === CAT.CURB && r.lenSrc === "bbox") || (r.cat !== CAT.CURB && r.areaSrc === "bbox")) { g.est++; target.est++; }
   }
@@ -896,7 +915,7 @@ function render() {
   if (C.length) section(Sm, "Curb & gutter by type", table(
     [{ h: "Type", f: g => g.label }, { h: "Material", f: g => layers(g) }, { h: "Section", f: g => g.section }, { h: "Count", f: g => g.count, num: true }, { h: U.len, f: g => fmt(toLen(g.len), 0), num: true }, { h: U.vol, f: g => g.volModel ? fmt(toVol(g.volModel), 1) : "", num: true }, { h: isM() ? "m³/m" : "CF/LF", f: g => g.volModel && g.len ? fmt(isM() ? g.volModel / g.len : (g.volModel * 35.3146667) / toLen(g.len), 2) : "", num: true }, { h: "Est.", f: g => estPill(g) }],
     C, { Type: "TOTAL", Count: sum(C, "count"), [U.len]: fmt(toLen(sum(C, "len")), 0), [U.vol]: fmt(toVol(sum(C, "volModel")), 1) }),
-    "LF = horizontal length: the element's Length where the model has one (walls, slab edges), else the centerline length from a loaded geometry quantities file (exact for straight, curved, L- and U-shaped runs), else the horizontal diagonal of its bounding box — flagged bbox: straight runs only, curved runs and runs around islands come out short. Concrete " + U.vol + " = the model's Volume, else the geometry file's envelope volume (top surface to underside of each piece); CF/LF is that volume per foot, a check against the section. In-place pieces are grouped by material; Section = model W x H or the mesh width.");
+    "LF = horizontal length: the element's Length where the model has one (walls, slab edges), else the centerline length from a loaded geometry quantities file (exact for straight, curved, L- and U-shaped runs), else solved from the bounding box and the section width (Types tab, default 30\") — flagged bbox: exact for straight pieces, curved runs and runs around islands come out short. Concrete " + U.vol + " = the model's Volume, else the geometry file's envelope volume (top surface to underside of each piece), else the section CF/LF entered in the Types tab x LF; the CF/LF column is the resulting volume per foot. In-place pieces are grouped by material; Section = model W x H, the mesh width, or the width you set.");
   let note = "";
   if (agg.est) note += agg.est + " element(s) carry no Area / Length and were estimated from bounding boxes (in-place families). ";
   if (agg.ignoredCount) note += agg.ignoredCount + " Revit hierarchy / geometry node(s) ignored.";
@@ -910,10 +929,14 @@ function render() {
   const catSel = (r) => { const s = document.createElement("select"); const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "(auto) " + (cat0Of.get(r.label) || CAT.OTHER); s.appendChild(o0);
     for (const c of PAVING_CATS.concat([CAT.OTHER])) { const o = document.createElement("option"); o.value = c; o.textContent = c; s.appendChild(o); }
     s.value = overrides[r.label] || ""; s.addEventListener("change", () => { if (s.value) overrides[r.label] = s.value; else delete overrides[r.label]; saveOverrides(); aggregate(); render(); }); return s; };
-  const payIn = (r) => (r.cat === CAT.OTHER || r.isCurb) ? "" : payInput(r.label, r.pay);
+  const numIn = (store, label, val, step, title) => { const i = document.createElement("input"); i.type = "number"; i.step = step; i.min = "0"; i.value = val != null ? val : ""; i.title = title;
+    i.addEventListener("change", () => { const v = +i.value; if (v > 0) store[label] = v; else delete store[label]; saveOverrides(); aggregate(); render(); }); return i; };
+  const payIn = (r) => r.cat === CAT.OTHER ? "" : r.isCurb ? (() => { const w = document.createElement("span"); w.style.whiteSpace = "nowrap";
+      w.appendChild(numIn(curbW, r.label, curbW[r.label] || "", "1", "Curb section width in inches (default 30) - used to solve the length of pieces measured from bounding boxes")); w.appendChild(document.createTextNode('" wide, '));
+      w.appendChild(numIn(curbSec, r.label, curbSec[r.label] || "", "0.01", "Curb section in cubic feet per LF (e.g. 1.68 for the 30\" cg-6 curb & gutter) - gives CY for pieces without a model or geometry volume")); w.appendChild(document.createTextNode(" CF/LF")); return w; })() : payInput(r.label, r.pay);
   section(Ty, "Types found (" + typeRows.length + ") — change a category or pay thickness here", table(
     [{ h: "Type", f: r => r.label }, { h: "Revit category", f: r => r.rcat }, { h: "Layers", f: r => r.mats.join(" + ") }, { h: "Count", f: r => r.count, num: true }, { h: U.area, f: r => r.area ? fmt(toArea(r.area), 0) : "", num: true }, { h: "Category", f: r => catSel(r) }, { h: payH, f: r => payIn(r) }],
-    typeRows), "Choices are remembered per model set on this browser. Pay thickness drives asphalt tons and concrete CY (blank = model thickness).");
+    typeRows), "Choices are remembered per model set on this browser. Pay thickness drives asphalt tons and concrete CY (blank = model thickness). Curb rows take the section width (for lengths estimated from bounding boxes; default 30\") and the section in CF per LF (gives CY when neither the model nor a geometry file carries a volume).");
 
   const D = $("tab-detail"); D.innerHTML = "";
   const detail = agg.rows.filter(r => r.cat !== CAT.IGNORED).sort((a, b) => CAT_ORDER.indexOf(a.cat) - CAT_ORDER.indexOf(b.cat) || a.label.localeCompare(b.label));
