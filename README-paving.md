@@ -18,12 +18,12 @@ Quantifies **asphalt paving (SF / SY / tons)**, **concrete sidewalk (SF / CY)**,
 1. Open the project's **3D Viewer**, load the road / site model(s).
 2. Click the **Plateau Tools** icon (black & gold) at the bottom of the viewer's left toolbar → **Paving & Concrete**. (Project side: the Plateau Tools dropdown has a *Paving & Concrete* entry whose "Open the 3D Viewer" button lands on it.)
 3. Check the models, pick the scope (everything, or only the viewer selection) and the units, then **Run takeoff**.
-4. **Summary** tab: asphalt by type & thickness (SF, SY, tons), sidewalk / slab / other paving (SF, SY, CY), curb by type (LF). **Types** tab: every type found with a category dropdown (override the automatic class) and a **pay thickness** box (drives tons and CY; blank = the model's thickness). **Detail**: one row per element with the source of each number. **Unclassified**: what was left out.
+4. **Summary** tab: asphalt by type & thickness (SF, SY, tons), sidewalk / slab / other paving (SF, SY, CY), curb by type (LF). Each row has an editable **Pay (in)** box (build b): type the thickness you will quote (e.g. 5 for the asphalt lifts when the model's 14 in includes the gravel base) and the tons / CY update at once; blank = the model's thickness. **Types** tab: every type found with a category dropdown (override the automatic class) and the same pay thickness box. **Detail**: one row per element with the source of each number. **Unclassified**: what was left out.
 5. Click any row to select those objects in the viewer (tick *Zoom to objects* in the mapping card to also fly there). **Download summary CSV / detail CSV** or **Copy summary for Excel**.
 
 Overrides, pay thicknesses and property mappings are remembered per model set in the browser. **Inspect selected object** prints every property of one object (plus its bounding box); **Copy inventory** copies a JSON of every property key and example objects for a new model type.
 
-## How it measures (build v2026.11.18)
+## How it measures (build v2026.11.18b)
 
 **Revit models (NWC / TrimBIM).** Only nodes with `Element · Category` are elements. A floor's geometry hangs below it (element → `Floors` container → `Solid` leaves, one per material layer with `Revit Material · Name`). The tool resolves that tree with one `getHierarchyParents` call per 250 nodes (reply in input order), or, if the viewer does not answer in order, one `getHierarchyChildren(recursive)` call per element; then reads the solids' bounding boxes (`getObjectBoundingBoxes`) and unions them onto the element. Both paths and a viewer that boxes elements itself are harness-verified and give identical totals.
 
@@ -50,7 +50,7 @@ Overrides, pay thicknesses and property mappings are remembered per model set in
 | CONCRETE SIDEWALK (12", Concrete + GRAVEL) | 6 | 17,020 SF, 630.4 CY at 12" pay |
 | Curb (391 in-place floor pieces + 1 wall, bbox diagonal) | 392 | 31,030 LF (mesh check: plan area ÷ 0.72 m width ≈ 30,400 LF; sum of diagonals from the mesh 30,940 LF) |
 
-The 14" / 12" model thicknesses include the gravel base layer: set the asphalt pay thickness per type in the Types tab (e.g. 5" surface + binder) before quoting tons — the model does not carry per-layer thicknesses.
+The 14" / 12" model thicknesses include the gravel base layer: type the asphalt pay thickness in the row's Pay box (e.g. 5" surface + binder) before quoting tons — the model does not carry per-layer thicknesses.
 
 Run the harness yourself: `python -m http.server 8766` in this folder, open `http://127.0.0.1:8766/harness-paving.html?auto=1` (`&parents=flat` forces the children fallback, `&agg=1` boxes elements). Headless: `msedge --headless=new --dump-dom --virtual-time-budget=90000 <url>` with a fresh `--user-data-dir` prints the harness log.
 
