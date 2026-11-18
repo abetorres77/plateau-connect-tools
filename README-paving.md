@@ -25,7 +25,7 @@ Quantifies **asphalt paving (SF / SY / tons)**, **concrete sidewalk (SF / CY)**,
 
 Overrides, pay thicknesses and property mappings are remembered per model set in the browser. **Inspect selected object** prints every property of one object (plus its bounding box); **Copy inventory** copies a JSON of every property key and example objects for a new model type.
 
-## How it measures (build v2026.11.18e)
+## How it measures (build v2026.11.18f)
 
 **Revit models (NWC / TrimBIM).** Only nodes with `Element · Category` are elements. A floor's geometry hangs below it (element → `Floors` container → `Solid` leaves, one per material layer with `Revit Material · Name`). The tool resolves that tree with one `getHierarchyParents` call per 250 nodes (reply in input order), or, if the viewer does not answer in order, one `getHierarchyChildren(recursive)` call per element; then reads the solids' bounding boxes (`getObjectBoundingBoxes`) and unions them onto the element. Both paths and a viewer that boxes elements itself are harness-verified and give identical totals.
 
@@ -33,7 +33,8 @@ Overrides, pay thicknesses and property mappings are remembered per model set in
 - *Plan area*: `Element · Area` (AreaMeasure, m²) — for Revit floors this is the plan (sketch) area: verified against the mesh (85,137 m² from the property vs 85,090 m² from the geometry, 0.06 %). Else Volume ÷ Thickness, else half of a solid's surface area (`Geometry · Area` on Navisworks / Civil 3D solids), else bounding-box footprint (flagged **bbox**).
 - *Thickness*: `Element · Thickness` / `Revit Type · Default Thickness` (mm), else Volume ÷ Area, else the bounding-box height when ≤ 0.6 m (flagged). It is the floor type's **total** thickness, all layers.
 - *Volume*: `Element · Volume` (m³) for the detail CSV; the CY in the tables = plan area × **pay thickness**.
-- *Curb length*: `Element · Length` (walls, slab edges, sweeps), else the **centerline length from a loaded geometry quantities file** (source *mesh*), else the horizontal diagonal of the element's bounding box (flagged **bbox**). The diagonal is only right for a straight run: on this model it was within 2 % for long straight pieces but up to 40 % high on short pieces (the section width adds to the diagonal) and far too short for curves and runs around islands — overall 31,030 LF against 31,172 LF from the geometry, with individual pieces off both ways. **Use the geometry file whenever the curb is modelled in place.**
+- *Curb length*: `Element · Length` (walls, slab edges, sweeps), else the **centerline length from a loaded geometry quantities file** (source *mesh*), else (build f) the straight-run length solved from the element's bounding box and the curb section width (Types tab, default 30"; a box dx = L cos t + W sin t, dy = L sin t + W cos t has one L for a given W) — flagged **bbox**: exact for straight pieces at any angle (a piece measured in Connect at 17.1 ft reads 17.14 ft; the plain diagonal said 19.4), still short for curved runs. File-less total on this model 30,302 LF vs 31,116 from the geometry.
+- *Curb concrete*: the model's Volume, else the geometry file's envelope volume, else (build f) the section in CF per LF you enter per curb type in the Types tab × LF (e.g. 1.68 for the modelled 30" cg-6 section). The diagonal is only right for a straight run: on this model it was within 2 % for long straight pieces but up to 40 % high on short pieces (the section width adds to the diagonal) and far too short for curves and runs around islands — overall 31,030 LF against 31,172 LF from the geometry, with individual pieces off both ways. **Use the geometry file whenever the curb is modelled in place.**
 - *Asphalt tons* = SY × pay thickness (in) × lb/SY/in (default 110) ÷ 2000. Metric: tonnes.
 - Property sets that carry a *Length* that is not the element's own are skipped (`Rebar Cover · Length` = the cover setting `0' - 1"`, `Level · Computation Height`, Navisworks `3D Visualization`).
 
@@ -64,7 +65,9 @@ Workflow: run `TrbDump.exe <model>.trb <anything>.js` (about 30 s on this model)
 
 The 14" / 12" model thicknesses include the gravel base layer: type the asphalt pay thickness in the row's Pay box (e.g. 5" surface + binder) before quoting tons — the model does not carry per-layer thicknesses.
 
-Run the harness yourself: `python -m http.server 8766` in this folder, open `http://127.0.0.1:8766/harness-paving.html?auto=1` (`&parents=flat` forces the children fallback, `&agg=1` boxes elements). Headless: `msedge --headless=new --dump-dom --virtual-time-budget=90000 <url>` with a fresh `--user-data-dir` prints the harness log.
+Run the harness yourself: `python -m http.server 8766` in this folder, open `http://127.0.0.1:8766/harness-paving.html?auto=1` (`&parents=flat` forces the children fallback, `&agg=1` boxes elements, `&noqty=1` skips the geometry file).
+
+**Real Connect (first run 2026-11-18, STC Campus project):** the live viewer answered `getHierarchyParents` out of order, so the per-element `getHierarchyChildren` fallback carried the run (511 calls, fine), and `getObjectBoundingBoxes` boxed the container nodes too (1,418 boxes). Totals matched the harness. Without the geometry file the panel is in bounding-box mode (status line says so) — load `<model>.qty.json` for exact curb LF and CY. Headless: `msedge --headless=new --dump-dom --virtual-time-budget=90000 <url>` with a fresh `--user-data-dir` prints the harness log.
 
 ## Not yet verified in real Connect
 
