@@ -1,0 +1,9 @@
+{
+  "title": "PEI Paving",
+  "url": "https://abetorres77.github.io/plateau-connect-tools/paving.html",
+  "icon": "https://abetorres77.github.io/plateau-connect-tools/icon.png",
+  "description": "Plateau Excavation paving and concrete takeoff from the models loaded in the 3D Viewer: asphalt SF/SY and tons by type and thickness, concrete sidewalk SF and CY, curb LF by type, slabs and pads SF and CY. Click a row to select the objects; export CSV.",
+  "extensionType": ["3dviewer"],
+  "type": "panel",
+  "enabled": true
+}
