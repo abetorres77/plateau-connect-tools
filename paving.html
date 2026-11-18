@@ -80,7 +80,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18b</span></header>
+<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18c</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -141,6 +141,14 @@
         <div class="rules" id="rules"></div>
         <div class="row"><button class="ghost" id="btn-rules-reset">Reset keywords to defaults</button></div>
       </details>
+    </div>
+
+    <div class="card" id="sel-card" hidden>
+      <h2>Selected in viewer <span class="pill" id="sel-n"></span></h2>
+      <p class="muted">Live quantities of whatever is selected in the 3D Viewer, from the last takeoff run. Select floors or curb pieces in the model (or click a row below) and read them here.</p>
+      <div class="kpis" id="sel-kpis"></div>
+      <div id="sel-table"></div>
+      <div class="row"><button id="btn-sel-copy" class="ghost">Copy selection for Excel</button></div>
     </div>
 
     <div class="card" id="results" hidden>
@@ -261,6 +269,8 @@ let rules = null;                         // category -> keyword string
 let overrides = {};                       // type label -> category override
 let payThk = {};                          // type label -> pay thickness (inches)
 let agg = null;
+let rowIndex = new Map();                 // "modelId|runtimeId" -> interpreted row (elements and their geometry nodes)
+let lastSel = null;                       // last viewer selection, re-rendered when units change
 let lastScopeLabel = "";
 let geomStats = { solids: 0, boxes: 0, elementsBoxed: 0, viaParents: false, viaChildren: 0 };
 
@@ -303,6 +313,8 @@ function checkedModelIds() { return [...document.querySelectorAll("#models input
 function updateSelInfo(sel) {
   const n = (sel || []).reduce((s, m) => s + ((m.objectRuntimeIds || []).length), 0);
   $("sel-info").textContent = n ? n + " object(s) selected in viewer" : "";
+  lastSel = sel || null;
+  try { renderSelection(); } catch (e) { log("renderSelection", e); }
 }
 
 // ---------- reading the model ----------
@@ -692,22 +704,29 @@ function aggregate() {
   const ignoredNodes = objects.filter(o => o.revit && !o.flat.has(REVIT_CAT_KEY));
   agg = { rows, groups: new Map(), other: new Map(), ignored: new Map(), ignoredCount: ignoredNodes.length, revit: revitModels.size > 0, est: 0 };
   for (const o of ignoredNodes) { const k = revitNodeKind(o); const e = agg.ignored.get(k) || { kind: k, count: 0, refs: [] }; e.count++; e.refs.push(o); agg.ignored.set(k, e); }
+  groupInto(agg, rows);
+  rowIndex = new Map();
+  for (const r of rows) { rowIndex.set(r.o.modelId + "|" + r.o.id, r); for (const k of (r.o.kids || [])) rowIndex.set(r.o.modelId + "|" + k.id, r); }
+}
+
+// Group interpreted rows by category / type / pay thickness into target.groups, unclassified into target.other.
+function groupInto(target, rows) {
   for (const r of rows) {
-    if (r.cat === CAT.IGNORED) { const k = r.ignoreKind; const e = agg.ignored.get(k) || { kind: k, count: 0, refs: [] }; e.count++; e.refs.push(r.o); agg.ignored.set(k, e); agg.ignoredCount++; continue; }
-    if (r.cat === CAT.OTHER) { const k = r.label + "||" + revitCategory(r.o); const e = agg.other.get(k) || { label: r.label, rcat: revitCategory(r.o) || r.o.cls, count: 0, refs: [], area: 0 }; e.count++; e.refs.push(r.o); if (r.area && r.areaSrc === "model") e.area += r.area; agg.other.set(k, e); continue; }
+    if (r.cat === CAT.IGNORED) { const k = r.ignoreKind; const e = target.ignored.get(k) || { kind: k, count: 0, refs: [] }; e.count++; e.refs.push(r.o); target.ignored.set(k, e); target.ignoredCount++; continue; }
+    if (r.cat === CAT.OTHER) { const k = r.label + "||" + revitCategory(r.o); const e = target.other.get(k) || { label: r.label, rcat: revitCategory(r.o) || r.o.cls, count: 0, refs: [], area: 0 }; e.count++; e.refs.push(r.o); if (r.area && r.areaSrc === "model") e.area += r.area; target.other.set(k, e); continue; }
     const pay = payFor(r);
     const key = r.cat + "||" + r.label + "||" + (r.cat === CAT.CURB ? r.section : pay);
-    let g = agg.groups.get(key);
-    if (!g) { g = { cat: r.cat, label: r.label, mats: r.mats.slice(), section: r.section, pay, count: 0, area: 0, areaEst: 0, len: 0, lenEst: 0, vol: 0, volModel: 0, thkSum: 0, thkN: 0, inplace: r.inplace, refs: [], est: 0 }; agg.groups.set(key, g); }
+    let g = target.groups.get(key);
+    if (!g) { g = { cat: r.cat, label: r.label, mats: r.mats.slice(), section: r.section, pay, count: 0, area: 0, areaEst: 0, len: 0, lenEst: 0, vol: 0, volModel: 0, thkSum: 0, thkN: 0, inplace: r.inplace, refs: [], est: 0 }; target.groups.set(key, g); }
     g.count++; g.refs.push(r.o);
     for (const m of r.mats) if (!g.mats.includes(m)) g.mats.push(m);
     if (r.area) { g.area += r.area; if (r.areaSrc === "bbox" || r.areaSrc === "surf/2") g.areaEst++; }
     if (r.len) { g.len += r.len; if (r.lenSrc === "bbox") g.lenEst++; }
     if (r.vol && r.volSrc === "model") g.volModel += r.vol;
     if (r.thk && r.thkSrc === "model") { g.thkSum += r.thk; g.thkN++; }
-    if ((r.cat === CAT.CURB && r.lenSrc === "bbox") || (r.cat !== CAT.CURB && r.areaSrc !== "model" && r.areaSrc !== "V/t")) { g.est++; agg.est++; }
+    if ((r.cat === CAT.CURB && r.lenSrc === "bbox") || (r.cat !== CAT.CURB && r.areaSrc !== "model" && r.areaSrc !== "V/t")) { g.est++; target.est++; }
   }
-  for (const g of agg.groups.values()) { g.thk = g.thkN ? g.thkSum / g.thkN : null; g.vol = g.cat === CAT.CURB ? g.volModel : g.area * g.pay * 0.0254; }
+  for (const g of target.groups.values()) { g.thk = g.thkN ? g.thkSum / g.thkN : null; g.vol = g.cat === CAT.CURB ? g.volModel : g.area * g.pay * 0.0254; }
 }
 // ---------- rendering ----------
 
@@ -753,6 +772,56 @@ const payInput = (label, val) => { const i = document.createElement("input"); i.
 const estPill = (g) => { if (!g.est) return ""; const s = document.createElement("span"); s.className = "pill est"; s.textContent = "bbox " + g.est + "/" + g.count; s.title = "Estimated from bounding boxes (no Area / Length in the model)"; return s; };
 const layers = (g) => g.mats.join(" + ");
 
+// KPI tiles for a set of groups (whole takeoff or the viewer selection)
+function kpiList(groups, othersCount, est) {
+  const U = L(); const byCat = (c) => groups.filter(g => g.cat === c); const kpis = [];
+  const A = byCat(CAT.ASPHALT), S = byCat(CAT.SIDEWALK), C = byCat(CAT.CURB), P = byCat(CAT.SLAB), O = byCat(CAT.OTHERPAV);
+  if (A.length) { const a = sum(A, "area"); kpis.push([fmt(toArea(a), 0), "asphalt " + U.area]); if (!isM()) kpis.push([fmt(toArea(a) / 9, 0), "asphalt SY"]); kpis.push([fmt(sum(A.map(g => ({ m: massOf(g) })), "m"), 0), "asphalt " + massLabel()]); }
+  if (S.length) kpis.push([fmt(toArea(sum(S, "area")), 0), "sidewalk " + U.area], [fmt(toVol(sum(S, "vol")), 1), "sidewalk " + U.vol]);
+  if (C.length) kpis.push([fmt(toLen(sum(C, "len")), 0), "curb " + U.len]);
+  if (P.length) kpis.push([fmt(toArea(sum(P, "area")), 0), "slab " + U.area], [fmt(toVol(sum(P, "vol")), 1), "slab " + U.vol]);
+  if (O.length) kpis.push([fmt(toArea(sum(O, "area")), 0), "other paving " + U.area]);
+  if (othersCount) kpis.push([othersCount, "unclassified"]);
+  if (est) kpis.push([est, "bbox-estimated"]);
+  return kpis;
+}
+function drawKpis(el, kpis) { el.innerHTML = ""; for (const [v, l] of kpis) { const k = document.createElement("div"); k.className = "kpi"; k.innerHTML = "<b></b><span></span>"; k.querySelector("b").textContent = v; k.querySelector("span").textContent = l; el.appendChild(k); } }
+
+// Live "selected in viewer" card: the rows of the last run that the viewer selection touches (elements or their solids)
+function selectionRows() {
+  if (!agg || !lastSel) return [];
+  const out = new Set();
+  for (const s of lastSel) {
+    const m = models.find(x => x.id === s.modelId || x.versionId === s.modelId);
+    const keys = [s.modelId]; if (m) { keys.push(m.id); if (m.versionId) keys.push(m.versionId); }
+    for (const id of (s.objectRuntimeIds || [])) { for (const k of keys) { const r = rowIndex.get(k + "|" + id); if (r) { out.add(r); break; } } }
+  }
+  return [...out];
+}
+function renderSelection() {
+  const card = $("sel-card");
+  if (!agg || $("results").hidden) { card.hidden = true; return; }
+  const rows = selectionRows().filter(r => r.cat !== CAT.IGNORED);
+  if (!rows.length) { card.hidden = true; return; }
+  const t = { groups: new Map(), other: new Map(), ignored: new Map(), ignoredCount: 0, est: 0 };
+  groupInto(t, rows);
+  const U = L();
+  const groups = [...t.groups.values()].sort((a, b) => CAT_ORDER.indexOf(a.cat) - CAT_ORDER.indexOf(b.cat) || a.label.localeCompare(b.label) || (a.pay - b.pay));
+  const others = [...t.other.values()];
+  $("sel-n").textContent = rows.length + " element(s)";
+  drawKpis($("sel-kpis"), kpiList(groups, sum(others, "count"), t.est));
+  const qty = (g) => g.cat === CAT.CURB ? fmt(toLen(g.len), 0) + " " + U.len : fmt(toArea(g.area), 0) + " " + U.area + (isM() ? "" : " / " + fmt(toArea(g.area) / 9, 0) + " SY");
+  const second = (g) => g.cat === CAT.CURB ? (g.volModel ? fmt(toVol(g.volModel), 1) + " " + U.vol : "") : g.cat === CAT.ASPHALT ? fmt(massOf(g), 0) + " " + massLabel() : fmt(toVol(g.vol), 1) + " " + U.vol;
+  const list = groups.map(g => ({ cat: g.cat, label: g.label, pay: g.pay, count: g.count, q: qty(g), s: second(g), refs: g.refs, est: g.est }))
+    .concat(others.map(o => ({ cat: CAT.OTHER, label: o.label, pay: "", count: o.count, q: o.area ? fmt(toArea(o.area), 0) + " " + U.area : "", s: "", refs: o.refs, est: 0 })));
+  $("sel-table").innerHTML = "";
+  $("sel-table").appendChild(table([{ h: "Category", f: r => r.cat }, { h: "Type", f: r => r.label }, { h: "Pay (in)", f: r => r.pay, num: true }, { h: "Count", f: r => r.count, num: true }, { h: "Quantity", f: r => r.q, num: true }, { h: "Tons / " + U.vol, f: r => r.s, num: true }, { h: "Est.", f: r => r.est ? "bbox " + r.est + "/" + r.count : "" }], list));
+  card.hidden = false;
+  card.dataset.rows = JSON.stringify(list.map(r => [r.cat, r.label, r.pay, r.count, r.q, r.s]));
+}
+$("btn-sel-copy").addEventListener("click", () => { const rows = JSON.parse($("sel-card").dataset.rows || "[]"); if (!rows.length) { setStatus("Nothing selected.", "warn"); return; }
+  copyText([["Selected in viewer", $("sel-n").textContent, new Date().toLocaleString()].join("\t"), ["Category", "Type", "Pay (in)", "Count", "Quantity", "Tons / volume"].join("\t"), ...rows.map(r => r.join("\t"))].join("\r\n"), "Selection copied — paste into Excel."); });
+
 function render() {
   const U = L();
   const groups = sorted();
@@ -760,18 +829,8 @@ function render() {
   const others = [...agg.other.values()].sort((a, b) => b.count - a.count);
   const ignored = [...agg.ignored.values()].sort((a, b) => b.count - a.count);
   $("res-scope").textContent = lastScopeLabel;
-
-  const kpis = [];
   const A = byCat(CAT.ASPHALT), S = byCat(CAT.SIDEWALK), C = byCat(CAT.CURB), P = byCat(CAT.SLAB), O = byCat(CAT.OTHERPAV);
-  if (A.length) { const a = sum(A, "area"); kpis.push([fmt(toArea(a), 0), "asphalt " + U.area]); if (!isM()) kpis.push([fmt(toArea(a) / 9, 0), "asphalt SY"]); kpis.push([fmt(sum(A.map(g => ({ m: massOf(g) })), "m"), 0), "asphalt " + massLabel()]); }
-  if (S.length) kpis.push([fmt(toArea(sum(S, "area")), 0), "sidewalk " + U.area], [fmt(toVol(sum(S, "vol")), 1), "sidewalk " + U.vol]);
-  if (C.length) kpis.push([fmt(toLen(sum(C, "len")), 0), "curb " + U.len]);
-  if (P.length) kpis.push([fmt(toArea(sum(P, "area")), 0), "slab " + U.area], [fmt(toVol(sum(P, "vol")), 1), "slab " + U.vol]);
-  if (O.length) kpis.push([fmt(toArea(sum(O, "area")), 0), "other paving " + U.area]);
-  kpis.push([sum(others, "count"), "unclassified"]);
-  if (agg.est) kpis.push([agg.est, "bbox-estimated"]);
-  $("kpis").innerHTML = "";
-  for (const [v, l] of kpis) { const k = document.createElement("div"); k.className = "kpi"; k.innerHTML = "<b></b><span></span>"; k.querySelector("b").textContent = v; k.querySelector("span").textContent = l; $("kpis").appendChild(k); }
+  drawKpis($("kpis"), kpiList(groups, sum(others, "count") || 0, agg.est).concat(sum(others, "count") ? [] : [[0, "unclassified"]]));
 
   const Sm = $("tab-summary"); Sm.innerHTML = "";
   const thkH = "Thk (" + U.thk + ")", payH = "Pay (in)";
@@ -827,6 +886,7 @@ function render() {
 
   $("mapping-card").hidden = false;
   $("results").hidden = false;
+  renderSelection();
 }
 
 async function selectRefs(refs) {
@@ -948,6 +1008,7 @@ async function run() {
     objects = await readObjects();
     await resolveGeometry();
     loadMapping(); buildMappingUI(); aggregate(); render();
+    try { lastSel = await API.viewer.getSelection(); renderSelection(); } catch (e) { /* ignore */ }
     const g = sorted();
     setStatus("Read " + objects.length + " object(s): " + agg.rows.length + " elements, " + g.length + " paving type(s), " + agg.other.size + " unclassified type(s); " + geomStats.boxes + " bounding boxes" + (geomStats.viaParents ? " (hierarchy via parents)" : geomStats.viaChildren ? " (hierarchy via " + geomStats.viaChildren + " children calls)" : "") + ".", "ok");
   } catch (e) { log("run failed", e); setStatus("Failed: " + (e.message || e), "err"); }
