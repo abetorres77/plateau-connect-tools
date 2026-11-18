@@ -80,7 +80,7 @@
 </style>
 </head>
 <body>
-<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18d</span></header>
+<header><span class="dot"></span><h1>PEI Paving</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="pill" style="margin-left:6px" id="ver">v2026.11.18e</span></header>
 <main>
   <div id="view-connecting" class="card">
     <h2>Connecting to the Trimble Connect 3D Viewer&hellip;</h2>
@@ -769,7 +769,7 @@ function groupInto(target, rows) {
     for (const m of r.mats) if (!g.mats.includes(m)) g.mats.push(m);
     if (r.area) { g.area += r.area; if (r.areaSrc === "bbox" || r.areaSrc === "surf/2") g.areaEst++; }
     if (r.len) { g.len += r.len; if (r.lenSrc === "bbox") g.lenEst++; }
-    if (r.vol && r.volSrc === "model") g.volModel += r.vol;
+    if (r.vol && (r.volSrc === "model" || r.volSrc === "mesh")) { g.volModel += r.vol; if (r.volSrc === "mesh") g.volMesh = (g.volMesh || 0) + 1; }
     if (r.thk && r.thkSrc === "model") { g.thkSum += r.thk; g.thkN++; }
     if ((r.cat === CAT.CURB && r.lenSrc === "bbox") || (r.cat !== CAT.CURB && r.areaSrc === "bbox")) { g.est++; target.est++; }
   }
@@ -825,7 +825,7 @@ function kpiList(groups, othersCount, est) {
   const A = byCat(CAT.ASPHALT), S = byCat(CAT.SIDEWALK), C = byCat(CAT.CURB), P = byCat(CAT.SLAB), O = byCat(CAT.OTHERPAV);
   if (A.length) { const a = sum(A, "area"); kpis.push([fmt(toArea(a), 0), "asphalt " + U.area]); if (!isM()) kpis.push([fmt(toArea(a) / 9, 0), "asphalt SY"]); kpis.push([fmt(sum(A.map(g => ({ m: massOf(g) })), "m"), 0), "asphalt " + massLabel()]); }
   if (S.length) kpis.push([fmt(toArea(sum(S, "area")), 0), "sidewalk " + U.area], [fmt(toVol(sum(S, "vol")), 1), "sidewalk " + U.vol]);
-  if (C.length) kpis.push([fmt(toLen(sum(C, "len")), 0), "curb " + U.len]);
+  if (C.length) { kpis.push([fmt(toLen(sum(C, "len")), 0), "curb " + U.len]); if (sum(C, "volModel")) kpis.push([fmt(toVol(sum(C, "volModel")), 1), "curb " + U.vol]); }
   if (P.length) kpis.push([fmt(toArea(sum(P, "area")), 0), "slab " + U.area], [fmt(toVol(sum(P, "vol")), 1), "slab " + U.vol]);
   if (O.length) kpis.push([fmt(toArea(sum(O, "area")), 0), "other paving " + U.area]);
   if (othersCount) kpis.push([othersCount, "unclassified"]);
@@ -894,9 +894,9 @@ function render() {
       G, { Type: "TOTAL", Count: sum(G, "count"), [U.area]: fmt(toArea(sum(G, "area")), 0), SY: isM() ? "" : fmt(toArea(sum(G, "area")) / 9, 0), [U.vol]: fmt(toVol(sum(G, "vol")), 1) }), note);
   }
   if (C.length) section(Sm, "Curb & gutter by type", table(
-    [{ h: "Type", f: g => g.label }, { h: "Material", f: g => layers(g) }, { h: "Section", f: g => g.section }, { h: "Count", f: g => g.count, num: true }, { h: U.len, f: g => fmt(toLen(g.len), 0), num: true }, { h: U.vol + " (model)", f: g => g.volModel ? fmt(toVol(g.volModel), 1) : "", num: true }, { h: "Est.", f: g => estPill(g) }],
-    C, { Type: "TOTAL", Count: sum(C, "count"), [U.len]: fmt(toLen(sum(C, "len")), 0), [U.vol + " (model)"]: fmt(toVol(sum(C, "volModel")), 1) }),
-    "LF = the element's Length where the model has one (walls, slab edges), else the centerline length from a loaded geometry quantities file (exact for straight, curved, L- and U-shaped runs), else the horizontal diagonal of its bounding box — flagged bbox: straight runs only, curved runs and runs around islands come out short. In-place pieces are grouped by material; Section = model W x H or the mesh width.");
+    [{ h: "Type", f: g => g.label }, { h: "Material", f: g => layers(g) }, { h: "Section", f: g => g.section }, { h: "Count", f: g => g.count, num: true }, { h: U.len, f: g => fmt(toLen(g.len), 0), num: true }, { h: U.vol, f: g => g.volModel ? fmt(toVol(g.volModel), 1) : "", num: true }, { h: isM() ? "m³/m" : "CF/LF", f: g => g.volModel && g.len ? fmt(isM() ? g.volModel / g.len : (g.volModel * 35.3146667) / toLen(g.len), 2) : "", num: true }, { h: "Est.", f: g => estPill(g) }],
+    C, { Type: "TOTAL", Count: sum(C, "count"), [U.len]: fmt(toLen(sum(C, "len")), 0), [U.vol]: fmt(toVol(sum(C, "volModel")), 1) }),
+    "LF = horizontal length: the element's Length where the model has one (walls, slab edges), else the centerline length from a loaded geometry quantities file (exact for straight, curved, L- and U-shaped runs), else the horizontal diagonal of its bounding box — flagged bbox: straight runs only, curved runs and runs around islands come out short. Concrete " + U.vol + " = the model's Volume, else the geometry file's envelope volume (top surface to underside of each piece); CF/LF is that volume per foot, a check against the section. In-place pieces are grouped by material; Section = model W x H or the mesh width.");
   let note = "";
   if (agg.est) note += agg.est + " element(s) carry no Area / Length and were estimated from bounding boxes (in-place families). ";
   if (agg.ignoredCount) note += agg.ignoredCount + " Revit hierarchy / geometry node(s) ignored.";
@@ -972,9 +972,9 @@ function summaryRows(sep) {
   }
   const C = byCat(CAT.CURB);
   if (C.length) {
-    Lns.push(line(["CURB & GUTTER BY TYPE (length from the model, else bounding-box diagonal)"])); Lns.push(line(["Type", "Material", "Section", "Count", U.len, U.vol + " (model)", "Bbox-estimated"]));
-    for (const g of C) Lns.push(line([g.label, layers(g), g.section, g.count, toLen(g.len).toFixed(0), g.volModel ? toVol(g.volModel).toFixed(1) : "", g.est || ""]));
-    Lns.push(line(["TOTAL", "", "", sum(C, "count"), toLen(sum(C, "len")).toFixed(0), toVol(sum(C, "volModel")).toFixed(1), ""]));
+    Lns.push(line(["CURB & GUTTER BY TYPE (horizontal LF: model Length, else geometry-file centerline, else bounding-box diagonal; concrete: model Volume, else geometry-file envelope)"])); Lns.push(line(["Type", "Material", "Section", "Count", U.len, U.vol, isM() ? "m3 per m" : "CF per LF", "Bbox-estimated"]));
+    for (const g of C) Lns.push(line([g.label, layers(g), g.section, g.count, toLen(g.len).toFixed(0), g.volModel ? toVol(g.volModel).toFixed(1) : "", g.volModel && g.len ? (isM() ? g.volModel / g.len : g.volModel * 35.3146667 / toLen(g.len)).toFixed(2) : "", g.est || ""]));
+    Lns.push(line(["TOTAL", "", "", sum(C, "count"), toLen(sum(C, "len")).toFixed(0), toVol(sum(C, "volModel")).toFixed(1), "", ""]));
     Lns.push("");
   }
   Lns.push(line(["UNCLASSIFIED ELEMENTS"])); Lns.push(line(["Type", "Revit category / class", "Count", U.area + " (model)"]));
@@ -988,7 +988,7 @@ function downloadDetail() {
   for (const r of agg.rows.filter(r => r.cat !== CAT.IGNORED).sort((a, b) => CAT_ORDER.indexOf(a.cat) - CAT_ORDER.indexOf(b.cat) || a.label.localeCompare(b.label))) {
     const d = r.dims;
     Lns.push(csvLine([r.o.modelName, r.cat, r.label, r.family, revitCategory(r.o) || r.o.cls, r.mats.join(" + "), r.inplace ? "yes" : "", fmtThk(r.thk).replace(/,/g, ""), r.area ? toArea(r.area).toFixed(1) : "", r.area && !isM() ? (toArea(r.area) / 9).toFixed(1) : "",
-      r.len ? toLen(r.len).toFixed(2) : "", r.vol && r.volSrc === "model" ? toVol(r.vol).toFixed(2) : "", r.perim ? toLen(r.perim).toFixed(1) : "", r.areaSrc, r.thkSrc, r.lenSrc,
+      r.len ? toLen(r.len).toFixed(2) : "", r.vol && (r.volSrc === "model" || r.volSrc === "mesh") ? toVol(r.vol).toFixed(2) : "", r.perim ? toLen(r.perim).toFixed(1) : "", r.areaSrc, r.thkSrc, r.lenSrc + (r.volSrc ? " / vol " + r.volSrc : ""),
       d ? toLen(d.dx).toFixed(2) : "", d ? toLen(d.dy).toFixed(2) : "", d ? toLen(d.dz).toFixed(2) : "", r.elemId, r.guid, r.o.id]));
   }
   const name = fileBase() + "_Detail.csv"; saveBlob(new Blob([Lns.join("\r\n") + "\r\n"], { type: "text/csv" }), name); setStatus("Downloaded " + name + " (" + (Lns.length - 1) + " rows)", "ok");
