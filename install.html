@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PEI Color &amp; Dates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet"><style>
+  :root {
+    --navy: #252a2e; --blue: #0063a3; --blue-dark: #004f83; --orange: #f2c244; /* Plateau yellow accent */
+    --paper: #f1f1f6; --ink: #252a2e; --soft: #6a6e79; --line: #cbcdd6; --ok: #1e8a44; --err: #da212c; --warn: #9a6700;
+  }
+  * { box-sizing: border-box; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--orange); outline-offset: 1px; border-color: var(--orange); }
+  button:hover:not(:disabled) { filter: brightness(.93); }
+  button.secondary:hover:not(:disabled), button.ghost:hover:not(:disabled) { background: var(--paper); filter: none; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Open Sans", "Segoe UI", -apple-system, sans-serif; font-size: 13px; line-height: 1.45; }
+  header { background: #fff; color: var(--ink); border-bottom: 1px solid var(--line); padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; flex: 1; }
+  header .ver { font-size: 10px; color: var(--soft); }
+  main { padding: 8px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 10px; margin-bottom: 8px; }
+  .card h2 { font-size: 13px; margin: 0 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: end; margin: 6px 0; }
+  label { display: block; font-size: 11px; color: var(--soft); margin-bottom: 2px; }
+  label.inline { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink); margin: 0; }
+  select, input[type="text"], input[type="date"], input[type="search"] { font: inherit; padding: 5px 7px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink); max-width: 100%; }
+  input[type="color"] { width: 30px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 3px; background: #fff; cursor: pointer; }
+  button { font: inherit; font-weight: 600; padding: 6px 11px; border: none; border-radius: 4px; background: var(--blue); color: #fff; cursor: pointer; }
+  button.secondary { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
+  button.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+  button.small { padding: 3px 8px; font-size: 11px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .status { font-size: 12px; color: var(--soft); min-height: 1.2em; margin-top: 4px; }
+  .status.ok { color: var(--ok); } .status.err { color: var(--err); } .status.warn { color: var(--warn); }
+  .muted { color: var(--soft); font-size: 12px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .tabs button { background: transparent; color: var(--soft); border-radius: 6px 6px 0 0; padding: 6px 10px; font-weight: 600; }
+  .tabs button.active { color: var(--navy); border-bottom: 2px solid var(--orange); }
+  .table-scroll { overflow: auto; max-height: 40vh; margin-top: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--soft); position: sticky; top: 0; background: #fff; }
+  td.num, th.num { text-align: right; }
+  tr.sel { cursor: pointer; } tr.sel:hover td { background: #fffbe6; } tr.active td { background: #fdf1bf; }
+  tr.off td { color: var(--soft); }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,0,0,.25); vertical-align: -2px; margin-right: 6px; }
+  .big { font-size: 20px; font-weight: 700; line-height: 1.2; }
+  [hidden] { display: none !important; }
+  .switch { display: flex; gap: 4px; }
+  .switch a { color: var(--ink); text-decoration: none; font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+  .switch a.on { background: var(--orange); border-color: var(--orange); color: var(--ink); font-weight: 600; }
+  .switch a.close { font-weight: 700; padding: 2px 7px; }
+  .grow { flex: 1; min-width: 120px; }
+  .grow input, .grow select { width: 100%; }
+  @media (max-width: 420px) { main { padding: 6px; } .card { padding: 8px; } th, td { padding: 2px 4px; font-size: 11px; } }
+</style></head>
+<body>
+<header><div class="dot"></div><h1>Color &amp; Dates</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="ver" id="ver"></span></header>
+<main>
+  <div id="view-connecting" class="card">Connecting to Trimble Connect…</div>
+
+  <div id="app" hidden>
+    <div class="tabs" id="maintabs"><button class="active" data-tab="dates">Installation dates</button><button data-tab="prop">Color by property</button></div>
+
+    <!-- ===================== Installation dates ===================== -->
+    <div id="tab-dates">
+      <div class="card">
+        <h2>Set the installation date</h2>
+        <div class="muted">Select objects in the model, pick the date, then save. The date is stored in this Connect project (property set <b>PEI Installation</b>) so everyone on the project sees it.</div>
+        <div class="row">
+          <div><div class="big" id="sel-count">0</div><div class="muted">selected</div></div>
+          <div><label>Installation date</label><input type="date" id="d-date"></div>
+          <div><label>Status</label><select id="d-status"><option>Installed</option><option>Planned</option></select></div>
+          <div class="grow"><label>Note (optional)</label><input type="text" id="d-note" maxlength="200"></div>
+        </div>
+        <div class="row">
+          <button id="d-save">Save date to selection</button>
+          <button class="ghost small" id="d-clear">Clear date on selection</button>
+          <button class="ghost small" id="d-reload" title="Read the saved dates from Connect again">Reload from Connect</button>
+        </div>
+        <div class="status" id="d-msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Color the model by installation date</h2>
+        <div class="row">
+          <div><label>Color by</label><select id="c-mode"><option value="status">Installed / planned</option><option value="month">Month installed</option><option value="week">Week installed</option></select></div>
+          <div><label>As of</label><input type="date" id="c-asof" title="Dates after this day count as planned"></div>
+          <label class="inline"><input type="checkbox" id="c-grey" checked> Grey out objects without a date</label>
+        </div>
+        <div class="row">
+          <button id="c-apply">Color model</button>
+          <button class="ghost small" id="c-reset">Reset colors</button>
+        </div>
+        <div class="table-scroll" style="max-height:22vh"><table id="d-legend"><tbody></tbody></table></div>
+        <div class="status" id="c-msg"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-top:0">
+          <h2 style="flex:1;margin:0">Saved dates <span class="muted" id="d-count"></span></h2>
+          <input type="search" id="d-filter" placeholder="Find object, model, note…" style="min-width:120px">
+          <button class="ghost small" id="d-csv">CSV</button>
+        </div>
+        <div class="table-scroll"><table id="d-tbl"><thead><tr><th>Date</th><th>Status</th><th>Object</th><th>Model</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+        <div class="muted">Click a row to select the object and zoom to it. Grey rows belong to a model that is not loaded.</div>
+      </div>
+    </div>
+
+    <!-- ===================== Color by property ===================== -->
+    <div id="tab-prop" hidden>
+      <div class="card">
+        <h2>Color the model by a property</h2>
+        <div class="muted">Reads every object in the loaded models, then colors them by the values of the property you pick.</div>
+        <div class="row">
+          <button id="p-scan">Read model properties</button>
+          <div class="grow"><label>Find a property</label><input type="search" id="p-find" placeholder="type part of the name…"></div>
+        </div>
+        <div class="row"><div class="grow"><label>Property</label><select id="p-key" disabled><option value="">(read the model first)</option></select></div></div>
+        <div class="row">
+          <button id="p-apply" disabled>Color model</button>
+          <button class="ghost small" id="p-reset">Reset colors</button>
+          <label class="inline"><input type="checkbox" id="p-grey" checked> Grey out the rest</label>
+        </div>
+        <div class="row">
+          <button class="ghost small" id="p-export" disabled title="Value, color and count; edit the colors in Excel">Export colors (CSV)</button>
+          <button class="ghost small" id="p-import" disabled title="A CSV with a value column and a #RRGGBB color column">Import colors (CSV)</button>
+          <input type="file" id="p-file" accept=".csv,.txt" hidden>
+        </div>
+        <div class="status" id="p-msg"></div>
+      </div>
+      <div class="card" id="p-card" hidden>
+        <div class="muted" id="p-count"></div>
+        <div class="table-scroll" style="max-height:52vh"><table id="p-tbl"><thead><tr><th>Color</th><th>Value</th><th class="num">Objects</th></tr></thead><tbody></tbody></table></div>
+        <div class="muted">Click a value to select its objects. Change a color, then <b>Color model</b> again.</div>
+      </div>
+    </div>
+  </div>
+</main>
+<script type="module">
+import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
+
+const VERSION = "v2026.11.19a";
+const LIB_NAME = "PEI Install Tracking", DEF_ID = "installation", DEF_NAME = "PEI Installation";
+const CHUNK = 250, GREY = "#c9ccd1";
+const HARNESS = new URLSearchParams(location.search).get("harness") === "1";
+const log = (...a) => console.log("[PEIInstall]", ...a);
+const $ = (id) => document.getElementById(id);
+const msg = (id, text, cls = "") => { const s = $(id); s.textContent = text; s.className = "status " + cls; };
+const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+$("ver").textContent = VERSION;
+
+// ---- shared tool chrome (same behaviour as the other Plateau viewer tools) ----
+(function () {
+  let hiddenSince = null;
+  function goMenu() { try { localStorage.setItem("plateau:viewerTool", "menu"); } catch (e) { /* ignore */ } location.replace("./index.html?v=" + Date.now()); }
+  function poll() {
+    const r = document.documentElement.getBoundingClientRect();
+    const hidden = window.innerWidth === 0 || window.innerHeight === 0 || r.width === 0 || r.height === 0;
+    if (hidden) { if (hiddenSince == null) hiddenSince = Date.now(); return; }
+    if (hiddenSince != null && Date.now() - hiddenSince > 400) goMenu();
+    hiddenSince = null;
+  }
+  if (!HARNESS) { window.addEventListener("resize", poll); setInterval(poll, 300); }
+  window.plateauGoMenu = goMenu;
+})();
+$("switch").querySelector("a").addEventListener("click", (ev) => { ev.preventDefault(); window.plateauGoMenu(); });
+$("close-tool").addEventListener("click", (ev) => { ev.preventDefault(); window.plateauGoMenu(); });
+
+// ---- small helpers ----
+const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || "");
+function weekStart(iso) {           // Monday of that week
+  const d = new Date(iso + "T00:00:00Z"); const wd = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - wd); return d.toISOString().slice(0, 10);
+}
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const RAMP = ["#440154", "#3b528b", "#21918c", "#5ec962", "#fde725"];
+function rampColor(t) {             // time-ordered buckets get an ordered ramp
+  const x = Math.min(1, Math.max(0, t)) * (RAMP.length - 1), i = Math.min(RAMP.length - 2, Math.floor(x)), f = x - i;
+  const h = (c, k) => parseInt(c.slice(1 + 2 * k, 3 + 2 * k), 16);
+  return "#" + [0, 1, 2].map(k => Math.round(h(RAMP[i], k) + (h(RAMP[i + 1], k) - h(RAMP[i], k)) * f).toString(16).padStart(2, "0")).join("");
+}
+const PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#17becf", "#bcbd22", "#3a4cc0", "#f2c244", "#00a087", "#b40426", "#7f3c8d", "#11a579", "#e68310", "#008695", "#cf1c90", "#4b4b8f", "#a5aa99"];
+function download(name, text, mime) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: mime || "text/plain" })); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+const csvCell = (v) => { const s = String(v == null ? "" : v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+function parseCsv(text) {
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === "," || c === ";" || c === "\t") { row.push(cur); cur = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cur); cur = ""; if (row.some(x => x !== "")) rows.push(row); row = []; }
+    else cur += c;
+  }
+  row.push(cur); if (row.some(x => x !== "")) rows.push(row);
+  return rows;
+}
+async function pool(list, n, fn) { let i = 0; await Promise.all(Array.from({ length: Math.min(n, list.length) }, async () => { while (i < list.length) { const k = i++; await fn(list[k], k); } })); }
+// IFC GUIDs: Connect's own property panel links use the 22-character form
+function compressGuid(uuid) {
+  const hex = uuid.replace(/[-{}]/g, "").toLowerCase(); if (!/^[0-9a-f]{32}$/.test(hex)) return uuid;
+  const C = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$";
+  const enc = (n, len) => { let s = ""; for (let i = 0; i < len; i++) { s = C[n % 64] + s; n = Math.floor(n / 64); } return s; };
+  let out = enc(parseInt(hex.slice(0, 2), 16), 2);
+  for (let i = 2; i < 32; i += 6) out += enc(parseInt(hex.slice(i, i + 6), 16), 4);
+  return out;
+}
+
+// ---- Connect state ----
+let API = null, models = [], project = null, accessToken = null;
+const byModel = (mid) => models.find(m => m.id === mid || m.versionId === mid);
+const isIfc = (m) => !!m && (/\.ifc(zip|xml)?$/i.test(m.name || "") || /^ifc$/i.test(m.type || ""));
+
+function tokenFrom(value) {
+  if (typeof value === "string" && value.length > 20 && value !== "pending") return value;
+  if (value && typeof value === "object") return value.accessToken || value.token || value.data || null;
+  return null;
+}
+async function getToken(force) {
+  if (accessToken && !force) return accessToken;
+  if (force) accessToken = null;
+  const direct = tokenFrom(await API.extension.requestPermission("accesstoken"));
+  if (direct) { accessToken = direct; return accessToken; }
+  msg("d-msg", "Waiting for you to approve access in Trimble Connect…", "warn");
+  await new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const p = setInterval(() => { if (accessToken) { clearInterval(p); resolve(); } else if (Date.now() - t0 > 120000) { clearInterval(p); reject(new Error("Access was not approved in Connect")); } }, 400);
+  });
+  return accessToken;
+}
+
+async function init() {
+  API = await WorkspaceAPI.connect(window.parent, (event, args) => {
+    const data = args && args.data !== undefined ? args.data : args;
+    if (event === "viewer.onModelStateChanged") { clearTimeout(init.t); init.t = setTimeout(() => onModelsChanged().catch(e => log("models", e)), 800); }
+    else if (event === "viewer.onSelectionChanged") updateSelCount(data);
+    else if (event === "extension.accessToken") { const t = tokenFrom(data); if (t) accessToken = t; }
+  }, 180000);
+  if (!API.viewer) {
+    $("view-connecting").innerHTML = "<h2>Open this tool inside the 3D Viewer</h2><p class='muted'>Color &amp; Dates works on the models loaded in the 3D Viewer, so open it from the Plateau Tools icon in the viewer&#39;s left toolbar.</p>";
+    return;
+  }
+  $("view-connecting").hidden = true; $("app").hidden = false;
+  $("d-date").value = today(); $("c-asof").value = today();
+  await refreshModels();
+  try { updateSelCount(await API.viewer.getSelection()); } catch (e) { /* ignore */ }
+  loadRecords(false).catch(e => { log("load", e); msg("d-msg", "Could not read the saved dates: " + e.message, "err"); });
+}
+async function refreshModels() {
+  try { models = (await API.viewer.getModels("loaded")) || []; } catch (e) { log("getModels", e); models = []; }
+}
+async function onModelsChanged() {
+  const before = models.map(m => m.id).join("|");
+  await refreshModels();
+  if (models.map(m => m.id).join("|") === before) return;
+  scan = null; fillKeys();
+  await resolveRuntime();
+  renderDates();
+}
+function updateSelCount(sel) {
+  const list = Array.isArray(sel) ? sel : (sel && sel.modelObjectIds) || [];
+  $("sel-count").textContent = list.reduce((n, g) => n + ((g.objectRuntimeIds || []).length), 0);
+}
+
+// The viewer's object-level model id is sometimes ModelSpec.id and sometimes the file versionId: try both, then unfiltered.
+async function listModelObjects(m) {
+  const attempts = [
+    { via: "id", sel: { modelObjectIds: [{ modelId: m.id }] } },
+    { via: "id+recursive", sel: { modelObjectIds: [{ modelId: m.id, recursive: true }] } },
+    { via: "versionId", sel: { modelObjectIds: [{ modelId: m.versionId }] } },
+    { via: "versionId+recursive", sel: { modelObjectIds: [{ modelId: m.versionId, recursive: true }] } },
+    { via: "all loaded", sel: undefined }
+  ];
+  for (const a of attempts) {
+    if (a.sel && !a.sel.modelObjectIds[0].modelId) continue;
+    let res;
+    try { res = await API.viewer.getObjects(a.sel); } catch (e) { log("getObjects failed via " + a.via, e); continue; }
+    let groups = (res || []).filter(r => r && (r.objects || []).length);
+    if (!a.sel) groups = groups.filter(r => r.modelId === m.id || r.modelId === m.versionId || !r.modelId);
+    const ids = groups.flatMap(r => r.objects.map(o => o.id));
+    if (ids.length) return { modelId: groups[0].modelId || m.id, ids, via: a.via };
+  }
+  return { modelId: m.id, ids: [], via: "nothing" };
+}
+const allIdsCache = new Map();
+async function allIds(m) { if (!allIdsCache.has(m.id)) allIdsCache.set(m.id, await listModelObjects(m)); return allIdsCache.get(m.id); }
+
+// ---- painting ----
+let painted = [];                   // [{modelId, ids}] currently colored by this tool
+async function paint(modelId, ids, color) {
+  if (!ids.length) return;
+  for (let i = 0; i < ids.length; i += 5000) {
+    const part = ids.slice(i, i + 5000);
+    await API.viewer.setObjectState({ modelObjectIds: [{ modelId, objectRuntimeIds: part, recursive: true }] }, { color });
+  }
+  if (color !== "reset") painted.push({ modelId, ids });
+}
+async function resetColors() {
+  const was = painted; painted = [];
+  for (const p of was) { try { await paint(p.modelId, p.ids, "reset"); } catch (e) { log("reset", e); } }
+  painted = [];
+}
+async function selectObjects(groups, zoom) {
+  if (!groups.length) return;
+  try {
+    await API.viewer.setSelection({ modelObjectIds: groups }, "set");
+    if (zoom) { try { await API.viewer.setCamera({ modelObjectIds: groups }, { animationTime: 500 }); } catch (e) { log("setCamera", e); } }
+  } catch (e) { log("select", e); }
+}
+function groupByModel(pairs) {      // [{modelId,id}] -> [{modelId, objectRuntimeIds}]
+  const m = new Map(); for (const p of pairs) { if (!m.has(p.modelId)) m.set(p.modelId, []); m.get(p.modelId).push(p.id); }
+  return [...m].map(([modelId, objectRuntimeIds]) => ({ modelId, objectRuntimeIds }));
+}
+
+// =====================================================================================
+// Storage: Trimble Connect Property Set service (one library per project, one set per object)
+// =====================================================================================
+let store = null;                   // { pset, org, libId, ready }
+async function api(base, path, opt = {}, retried = 0) {
+  const url = /^https?:/.test(path) ? path : base + path;
+  const init = { method: opt.method || "GET", headers: { Authorization: "Bearer " + (await getToken()) } };
+  if (opt.body !== undefined) { init.headers["Content-Type"] = "application/json"; init.body = JSON.stringify(opt.body); }
+  const doFetch = (HARNESS && window.parent && window.parent.peiFakeFetch) ? window.parent.peiFakeFetch : fetch.bind(window);
+  const res = await doFetch(url, init);
+  if (res.status === 401 && !retried) { await getToken(true); return api(base, path, opt, 1); }
+  if ((res.status === 429 || res.status === 503) && retried < 4) { await new Promise(r => setTimeout(r, 600 * Math.pow(2, retried))); return api(base, path, opt, retried + 1); }
+  let body = null; const text = await res.text(); try { body = text ? JSON.parse(text) : null; } catch (e) { body = text; }
+  return { status: res.status, ok: res.status >= 200 && res.status < 300, body };
+}
+const errText = (r) => r.status + " " + (r.body && (r.body.message || r.body.code || r.body.error) ? (r.body.message || r.body.code || r.body.error) : (typeof r.body === "string" ? r.body.slice(0, 120) : ""));
+
+async function getProject() {
+  if (project) return project;
+  try { project = await API.project.getProject(); } catch (e) { project = null; }
+  if (!project || !project.id) project = await API.project.getCurrentProject();
+  if (!project || !project.id) throw new Error("Connect did not say which project this is");
+  return project;
+}
+async function findStore() {
+  if (store) return store;
+  const p = await getProject();
+  const doFetch = (HARNESS && window.parent && window.parent.peiFakeFetch) ? window.parent.peiFakeFetch : fetch.bind(window);
+  let regions = [];
+  try { regions = await (await doFetch("https://app.connect.trimble.com/tc/api/2.0/regions", {})).json(); } catch (e) { log("regions", e); }
+  const loc = String(p.location || "").toLowerCase();
+  const reg = regions.find(r => String(r.location || "").toLowerCase() === loc) || regions.find(r => r.isMaster) || {};
+  store = {
+    pset: (reg["pset-api"] || "https://pset-api.us-east-1.connect.trimble.com/v1/").replace(/\/$/, ""),
+    org: (reg["org-api"] || "https://org-api.us-east-1.connect.trimble.com/v1/").replace(/\/$/, ""),
+    libId: "pei-install-" + p.id, ready: false, exists: null, notes: []
+  };
+  return store;
+}
+const DEF = {
+  id: DEF_ID, name: DEF_NAME, types: [],
+  i18n: { "en-US": { name: DEF_NAME, props: { installDate: "Installation Date", status: "Status", note: "Note", objectName: "Object", modelName: "Model", externalId: "Object ID" } } },
+  schema: { props: { installDate: { type: "string", format: "date" }, status: { type: "string" }, note: { type: "string" }, objectName: { type: "string" }, modelName: { type: "string" }, externalId: { type: "string" } } }
+};
+// Creates the library the first time somebody saves a date (the person doing that needs to be a project admin).
+async function ensureStore() {
+  const s = await findStore();
+  if (s.ready) return s;
+  const lib = "/libs/" + encodeURIComponent(s.libId);
+  let r = await api(s.pset, lib);
+  if (r.status === 404) {
+    const pid = project.id;
+    r = await api(s.pset, "/libs", { method: "POST", body: { id: s.libId, name: LIB_NAME, defs: [DEF] } });
+    if (!r.ok && r.status !== 409) throw new Error("Could not create the property set library (" + errText(r) + "). A project admin has to save the first date.");
+    // let every project member read and write the dates
+    const policy = { version: "2020-04-06", statements: [
+      { effect: "Allow", principal: "project:" + pid + ":ADMIN", action: ["pset:GetLibrary*", "pset:UpdateLibrary*", "pset:CreateDef", "pset:GetDef*", "pset:ListDefs", "pset:UpdateDef", "pset:ValidatePSets", "pset:Subscribe"], resource: ["*"] },
+      { effect: "Allow", principal: { any: ["project:" + pid] }, action: ["pset:Get*", "pset:List*", "pset:PutPSet", "pset:Subscribe"], resource: "*" } ] };
+    const pr = await api(s.pset, lib + "/policy", { method: "PUT", body: policy });
+    if (!pr.ok) s.notes.push("sharing policy not set (" + errText(pr) + "): other project members may not see the dates");
+    // register the library with the project so Connect's own Properties panel can find it
+    const forest = "/forests/" + encodeURIComponent("project:" + pid + ":data");
+    const tr = await api(s.org, forest + "/trees", { method: "POST", body: { id: "ProjectContext", type: "context" } });
+    if (!tr.ok && tr.status !== 409) log("ProjectContext tree", errText(tr));
+    const nr = await api(s.org, forest + "/trees/ProjectContext/nodes/PSetLibs", { method: "PATCH", body: { add: ["frn:lib:" + s.libId] } });
+    if (!nr.ok) s.notes.push("library not registered with the project (" + errText(nr) + "): dates are saved, but may not show in Connect's own Properties panel");
+  } else if (r.status === 403) {
+    throw new Error("You do not have access to this project's installation-date library. Ask a project admin to open Color & Dates and save a date once.");
+  } else if (!r.ok) throw new Error("Property set service answered " + errText(r));
+  const d = await api(s.pset, lib + "/defs/" + DEF_ID);
+  if (d.status === 404) {
+    const c = await api(s.pset, lib + "/defs", { method: "POST", body: DEF });
+    if (!c.ok && c.status !== 409) throw new Error("Could not create the property set definition (" + errText(c) + ")");
+  }
+  s.ready = true; s.exists = true;
+  return s;
+}
+
+// ---- records ----
+const records = new Map();          // link -> { link, externalId, installDate, status, note, objectName, modelName, rt:{modelId,id}|null }
+function recFromPset(ps) {
+  const p = ps.props || {};
+  return { link: ps.link, externalId: p.externalId || String(ps.link || "").replace(/^frn:entity:/, ""), installDate: p.installDate || "", status: p.status || "Installed", note: p.note || "", objectName: p.objectName || "", modelName: p.modelName || "", modifiedAt: ps.modifiedAt || "", rt: null };
+}
+async function loadRecords(announce) {
+  const s = await findStore();
+  let path = "/libs/" + encodeURIComponent(s.libId) + "/defs/" + DEF_ID + "/psets?top=500", pages = 0;
+  const got = [];
+  while (path && pages++ < 400) {
+    const r = await api(s.pset, path);
+    if (r.status === 404) { s.exists = false; records.clear(); renderDates(); msg("d-msg", "No installation dates saved in this project yet."); return; }
+    if (r.status === 403) throw new Error("no access to this project's installation-date library (ask a project admin to open this tool and save a date once)");
+    if (!r.ok) throw new Error(errText(r));
+    for (const ps of ((r.body && r.body.items) || [])) if (!ps.deleted) got.push(ps);
+    const next = r.body && r.body.next;
+    path = next ? (/^https?:/.test(next) ? next : (next.startsWith("/") ? next : "/" + next)) : null;
+  }
+  s.exists = true;
+  records.clear();
+  for (const ps of got) { const rec = recFromPset(ps); if (isDate(rec.installDate)) records.set(rec.link, rec); }
+  await resolveRuntime();
+  renderDates();
+  msg("d-msg", records.size + " saved installation date" + (records.size === 1 ? "" : "s") + " read from Connect.", announce ? "ok" : "");
+}
+// find each saved object in the loaded models
+async function resolveRuntime() {
+  for (const rec of records.values()) rec.rt = null;
+  const list = [...records.values()];
+  if (!list.length || !API.viewer.convertToObjectRuntimeIds) return;
+  for (const m of models) {
+    const want = list.filter(r => !r.rt || r.modelName === m.name);
+    for (let i = 0; i < want.length; i += 500) {
+      const part = want.slice(i, i + 500);
+      let out = null;
+      try { out = await API.viewer.convertToObjectRuntimeIds(m.id, part.map(r => r.externalId)); } catch (e) { log("convertToObjectRuntimeIds", m.name, e); }
+      if (!Array.isArray(out)) continue;
+      part.forEach((r, k) => { const id = out[k]; if (typeof id === "number" && id > 0 && (!r.rt || r.modelName === m.name)) r.rt = { modelId: m.id, id }; });
+    }
+  }
+}
+
+// ---- which object does a date belong to? ----
+// Revit exports hang the geometry ("Solid" leaves) under the real element; the viewer selects the leaves.
+const hasElement = (o) => (o.properties || []).some(s => /^element$/i.test(s.name) && (s.properties || []).some(p => /^category$/i.test(p.name)));
+const flatModel = new Map();        // modelId -> true when the model has no Revit element nodes
+const kidsCache = new Map();        // modelId:id -> descendant ids
+function labelOf(o) {
+  const pr = o.product || {}; let mark = "";
+  for (const s of (o.properties || [])) if (/^element$/i.test(s.name)) for (const p of (s.properties || [])) if (/^mark$/i.test(p.name) && p.value) mark = String(p.value);
+  const name = pr.name || pr.objectType || pr.description || ("Object " + o.id);
+  return mark && !String(name).includes(mark) ? name + " (" + mark + ")" : String(name);
+}
+function guidProp(o) {
+  for (const s of (o.properties || [])) for (const p of (s.properties || [])) if (/^(ifc ?guid|guid|globalid)$/i.test(p.name) && p.value) return String(p.value);
+  return "";
+}
+function entityIds(raw) {
+  const out = []; const walk = (x) => { if (x == null) return; if (Array.isArray(x)) { x.forEach(walk); return; } if (typeof x === "number") out.push(x); else if (typeof x === "object") { if (typeof x.id === "number") out.push(x.id); if (x.objects) walk(x.objects); if (x.children) walk(x.children); } };
+  walk(raw); return out;
+}
+async function readProps(modelId, ids) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += CHUNK) for (const o of ((await API.viewer.getObjectProperties(modelId, ids.slice(i, i + CHUNK))) || [])) out.push(o);
+  return out;
+}
+async function resolveItems(modelId, ids, note) {
+  const items = new Map();          // item id -> { modelId, id, name, guid }
+  const own = await readProps(modelId, ids);
+  const loose = [];
+  for (const o of own) { if (hasElement(o) || flatModel.get(modelId)) items.set(o.id, { modelId, id: o.id, name: labelOf(o), guid: guidProp(o) }); else loose.push(o); }
+  let misses = 0, hits = 0;
+  await pool(loose, 6, async (o, k) => {
+    if (flatModel.get(modelId) || !API.viewer.getHierarchyParents) { items.set(o.id, { modelId, id: o.id, name: labelOf(o), guid: guidProp(o) }); return; }
+    let el = null;
+    try {
+      const pids = entityIds(await API.viewer.getHierarchyParents(modelId, [o.id], undefined, true)).filter(id => id !== o.id);
+      if (pids.length) { const pp = await readProps(modelId, pids); el = pids.map(id => pp.find(x => x.id === id)).find(x => x && hasElement(x)) || null; }
+    } catch (e) { log("getHierarchyParents", e); }
+    if (el) { hits++; items.set(el.id, { modelId, id: el.id, name: labelOf(el), guid: guidProp(el) }); }
+    else { misses++; items.set(o.id, { modelId, id: o.id, name: labelOf(o), guid: guidProp(o) }); if (misses >= 6 && !hits) flatModel.set(modelId, true); }
+    if (note && k % 20 === 0) note(k, loose.length);
+  });
+  return [...items.values()];
+}
+async function descendants(modelId, id) {
+  const key = modelId + ":" + id;
+  if (kidsCache.has(key)) return kidsCache.get(key);
+  let kids = [];
+  if (!flatModel.get(modelId) && API.viewer.getHierarchyChildren) {
+    try { kids = entityIds(await API.viewer.getHierarchyChildren(modelId, [id], undefined, true)).filter(x => x !== id); } catch (e) { log("getHierarchyChildren", e); }
+  }
+  kidsCache.set(key, kids); return kids;
+}
+
+// ---- save / clear ----
+let busy = false;
+async function saveSelection(clear) {
+  if (busy) return;
+  const date = $("d-date").value;
+  if (!clear && !isDate(date)) { msg("d-msg", "Pick the installation date first.", "warn"); return; }
+  busy = true; $("d-save").disabled = true; $("d-clear").disabled = true;
+  try {
+    const sel = ((await API.viewer.getSelection()) || []).filter(g => (g.objectRuntimeIds || []).length);
+    if (!sel.length) { msg("d-msg", "Select one or more objects in the model first.", "warn"); return; }
+    msg("d-msg", "Reading the selected objects…");
+    const items = [];
+    for (const g of sel) for (const it of await resolveItems(g.modelId, g.objectRuntimeIds, (k, n) => msg("d-msg", "Reading the selected objects… " + k + " / " + n))) items.push(it);
+    // persistent ids
+    let noId = 0;
+    for (const grp of groupByModel(items)) {
+      const mine = items.filter(i => i.modelId === grp.modelId), m = byModel(grp.modelId);
+      for (let i = 0; i < mine.length; i += 500) {
+        const part = mine.slice(i, i + 500); let ext = [];
+        try { ext = (await API.viewer.convertToObjectIds(grp.modelId, part.map(x => x.id))) || []; } catch (e) { log("convertToObjectIds", e); }
+        part.forEach((it, k) => {
+          let x = ext[k] ? String(ext[k]) : it.guid;
+          it.externalId = x || "";
+          if (!x) { noId++; return; }
+          if (isIfc(m) && /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(x)) x = compressGuid(x);
+          it.link = "frn:entity:" + x;
+          it.modelName = m ? (m.name || "") : "";
+        });
+      }
+    }
+    const good = items.filter(i => i.link);
+    if (!good.length) { msg("d-msg", "The viewer gave no permanent id for the selected objects, so a date cannot be attached to them.", "err"); return; }
+    msg("d-msg", "Saving to Connect…");
+    const s = await ensureStore();
+    const status = $("d-status").value, note = $("d-note").value.trim();
+    let failed = 0, firstErr = "";
+    for (let i = 0; i < good.length; i += 400) {
+      const part = good.slice(i, i + 400);
+      const body = { items: part.map(it => clear
+        ? { link: it.link, libId: s.libId, defId: DEF_ID, props: {}, deleted: true }
+        : { link: it.link, libId: s.libId, defId: DEF_ID, props: Object.assign({ installDate: date, status, objectName: it.name.slice(0, 200), modelName: it.modelName, externalId: it.externalId }, note ? { note } : {}) }) };
+      let r = await api(s.pset, "/psets/changeset", { method: "POST", body });
+      if (clear && (!r.ok || (r.body && r.body.errorCount))) {
+        // members without delete rights: blank the date instead (records without a date are ignored)
+        body.items = part.map(it => ({ link: it.link, libId: s.libId, defId: DEF_ID, props: { status: "Cleared", objectName: it.name.slice(0, 200), modelName: it.modelName, externalId: it.externalId } }));
+        r = await api(s.pset, "/psets/changeset", { method: "POST", body });
+      }
+      if (!r.ok) throw new Error("Connect refused the save (" + errText(r) + ")");
+      const bad = new Set(((r.body && r.body.errors) || []).map(e => { if (!firstErr) firstErr = e.message || e.code || ""; return e.item && e.item.link; }));
+      failed += bad.size;
+      for (const it of part) {
+        if (bad.has(it.link)) continue;
+        if (clear) records.delete(it.link);
+        else records.set(it.link, { link: it.link, externalId: it.externalId, installDate: date, status, note, objectName: it.name, modelName: it.modelName, modifiedAt: new Date().toISOString(), rt: { modelId: (byModel(it.modelId) || { id: it.modelId }).id, id: it.id } });
+      }
+    }
+    renderDates();
+    const done = good.length - failed;
+    let text = clear ? "Cleared the date on " + done + " object" + (done === 1 ? "" : "s") + "." : "Saved " + date + " on " + done + " object" + (done === 1 ? "" : "s") + ".";
+    if (failed) text += " " + failed + " failed" + (firstErr ? " (" + firstErr + ")" : "") + ".";
+    if (noId) text += " " + noId + " had no permanent id and were skipped.";
+    if (s.notes.length) { text += " Note: " + s.notes.join("; ") + "."; s.notes = []; }
+    msg("d-msg", text, failed || noId ? "warn" : "ok");
+    if (dateColorsOn) await colorByDates();
+  } catch (e) {
+    log("save failed", e); msg("d-msg", "Not saved: " + (e && e.message ? e.message : e), "err");
+  } finally { busy = false; $("d-save").disabled = false; $("d-clear").disabled = false; }
+}
+
+// ---- color by date ----
+let dateColorsOn = false, legend = [];
+function buckets() {
+  const mode = $("c-mode").value, asof = isDate($("c-asof").value) ? $("c-asof").value : today();
+  const map = new Map();
+  const add = (key, label, sort, rec) => { if (!map.has(key)) map.set(key, { key, label, sort, recs: [] }); map.get(key).recs.push(rec); };
+  for (const r of records.values()) {
+    if (r.installDate > asof || r.status === "Planned") { add("~planned", "Planned / after " + asof, "9999", r); continue; }
+    if (mode === "status") add("installed", "Installed", "0", r);
+    else if (mode === "month") { const k = r.installDate.slice(0, 7); add(k, MONTHS[+k.slice(5, 7) - 1] + " " + k.slice(0, 4), k, r); }
+    else { const k = weekStart(r.installDate); add(k, "Week of " + k, k, r); }
+  }
+  const list = [...map.values()].sort((a, b) => a.sort < b.sort ? -1 : 1);
+  const timed = list.filter(b => b.key !== "~planned" && b.key !== "installed");
+  timed.forEach((b, i) => { b.color = rampColor(timed.length > 1 ? i / (timed.length - 1) : 0.6); });
+  for (const b of list) { if (b.key === "installed") b.color = "#1e8a44"; if (b.key === "~planned") b.color = mode === "status" ? "#0063a3" : "#9aa0ab"; }
+  return list;
+}
+function renderLegend() {
+  legend = buckets();
+  $("d-legend").querySelector("tbody").innerHTML = legend.map((b, i) => '<tr class="sel" data-i="' + i + '"><td><span class="sw" style="background:' + b.color + '"></span>' + esc(b.label) + '</td><td class="num">' + b.recs.length + "</td></tr>").join("")
+    || '<tr><td class="muted">No dates saved yet.</td></tr>';
+}
+async function colorByDates() {
+  msg("c-msg", "Coloring…");
+  try {
+    await resetColors(); renderLegend();
+    const colored = new Map();      // modelId -> Set of ids (items + their geometry)
+    let shown = 0;
+    for (const b of legend) {
+      for (const grp of groupByModel(b.recs.filter(r => r.rt).map(r => r.rt))) {
+        const ids = new Set(grp.objectRuntimeIds);
+        await pool(grp.objectRuntimeIds, 6, async (id) => { for (const k of await descendants(grp.modelId, id)) ids.add(k); });
+        if (!colored.has(grp.modelId)) colored.set(grp.modelId, new Set());
+        for (const id of ids) colored.get(grp.modelId).add(id);
+        b.paint = b.paint || []; b.paint.push({ modelId: grp.modelId, ids: [...ids] });
+        shown += grp.objectRuntimeIds.length;
+      }
+    }
+    if ($("c-grey").checked) {
+      for (const m of models) {
+        const all = await allIds(m), skip = colored.get(m.id) || colored.get(all.modelId) || new Set();
+        await paint(all.modelId, all.ids.filter(id => !skip.has(id)), GREY);
+      }
+    }
+    for (const b of legend) for (const p of (b.paint || [])) await paint(p.modelId, p.ids, b.color);
+    dateColorsOn = true;
+    const missing = [...records.values()].filter(r => !r.rt).length;
+    msg("c-msg", "Colored " + shown + " object" + (shown === 1 ? "" : "s") + (missing ? "; " + missing + " saved date" + (missing === 1 ? " is" : "s are") + " on objects not in the loaded models" : "") + ".", "ok");
+  } catch (e) { log("color", e); msg("c-msg", "Could not color the model: " + (e && e.message ? e.message : e), "err"); }
+}
+function visibleRecords() {
+  const q = $("d-filter").value.trim().toLowerCase();
+  return [...records.values()].filter(r => !q || [r.installDate, r.status, r.objectName, r.modelName, r.note].some(s => String(s || "").toLowerCase().includes(q)))
+    .sort((a, b) => a.installDate < b.installDate ? 1 : (a.installDate > b.installDate ? -1 : (a.objectName < b.objectName ? -1 : 1)));
+}
+function renderDates() {
+  const list = visibleRecords();
+  $("d-tbl").querySelector("tbody").innerHTML = list.map((r, i) => '<tr class="sel' + (r.rt ? "" : " off") + '" data-i="' + i + '"><td>' + esc(r.installDate) + "</td><td>" + esc(r.status) + "</td><td>" + esc(r.objectName) + "</td><td>" + esc(r.modelName) + "</td><td>" + esc(r.note) + "</td></tr>").join("");
+  $("d-count").textContent = "(" + (list.length === records.size ? records.size : list.length + " of " + records.size) + ")";
+  renderLegend();
+}
+const datesCsv = () => [["Installation Date", "Status", "Object", "Model", "Note", "Object ID"]].concat(visibleRecords().map(r => [r.installDate, r.status, r.objectName, r.modelName, r.note, r.externalId])).map(r => r.map(csvCell).join(",")).join("\r\n");
+
+// =====================================================================================
+// Color by property
+// =====================================================================================
+let scan = null;                    // { keys: Map key -> Map value -> [{modelId,id}], count }
+let propRows = [];                  // current value rows { value, count, color, objs }
+const USFT_MM = 304.800609601;
+function fmtValue(p) {
+  const v = p.value; if (v == null || v === "") return "";
+  if (typeof v === "number") {
+    if (p.type === 0) return (v / USFT_MM).toFixed(2) + " ft";
+    if (p.type === 1) return (v * 10.7638673611).toFixed(1) + " sf";
+    if (p.type === 2) return (v * 1.3079506193).toFixed(2) + " CY";
+    if (p.type === 8) { const d = new Date(v > 1e11 ? v : v * 1000); return isNaN(d) ? String(v) : d.toISOString().slice(0, 10); }
+    return Number.isInteger(v) ? String(v) : String(Math.round(v * 1000) / 1000);
+  }
+  return String(v).trim();
+}
+async function scanModels() {
+  if (busy) return; busy = true; $("p-scan").disabled = true;
+  try {
+    await refreshModels();
+    if (!models.length) { msg("p-msg", "No models loaded in the viewer.", "warn"); return; }
+    const keys = new Map(); let count = 0;
+    for (const m of models) {
+      msg("p-msg", "Listing objects in " + m.name + "…");
+      const all = await allIds(m);
+      for (let i = 0; i < all.ids.length; i += CHUNK) {
+        msg("p-msg", "Reading " + m.name + "… " + i + " / " + all.ids.length);
+        for (const o of ((await API.viewer.getObjectProperties(all.modelId, all.ids.slice(i, i + CHUNK))) || [])) {
+          count++;
+          const ref = { modelId: all.modelId, id: o.id };
+          for (const s of (o.properties || [])) {
+            if (/^(revit material|3d visualization)$/i.test(s.name)) continue;
+            for (const p of (s.properties || [])) {
+              const val = fmtValue(p); if (val === "") continue;
+              const key = s.name + " · " + p.name;
+              let vm = keys.get(key); if (!vm) { vm = new Map(); keys.set(key, vm); }
+              let arr = vm.get(val); if (!arr) { arr = []; vm.set(val, arr); }
+              arr.push(ref);
+            }
+          }
+        }
+      }
+    }
+    scan = { keys, count };
+    fillKeys();
+    msg("p-msg", "Read " + count + " objects, " + keys.size + " properties. Pick a property.", "ok");
+  } catch (e) { log("scan", e); msg("p-msg", "Could not read the model: " + (e && e.message ? e.message : e), "err"); }
+  finally { busy = false; $("p-scan").disabled = false; }
+}
+function fillKeys() {
+  const sel = $("p-key"), keep = sel.value, q = $("p-find").value.trim().toLowerCase();
+  sel.innerHTML = "";
+  if (!scan) { sel.disabled = true; sel.innerHTML = '<option value="">(read the model first)</option>'; $("p-card").hidden = true; for (const id of ["p-apply", "p-export", "p-import"]) $(id).disabled = true; return; }
+  const list = [...scan.keys].map(([key, vm]) => ({ key, n: [...vm.values()].reduce((a, b) => a + b.length, 0), d: vm.size }))
+    .filter(k => !q || k.key.toLowerCase().includes(q)).sort((a, b) => b.n - a.n || (a.key < b.key ? -1 : 1));
+  const first = document.createElement("option"); first.value = ""; first.textContent = "(choose from " + list.length + " properties)"; sel.appendChild(first);
+  for (const k of list) { const o = document.createElement("option"); o.value = k.key; o.textContent = k.key + "  (" + k.d + " values, " + k.n + " objects)"; sel.appendChild(o); }
+  sel.disabled = false;
+  if (list.some(k => k.key === keep)) sel.value = keep;
+}
+const mapKey = (key) => "plateau:colors:" + key;
+function pickKey() {
+  const key = $("p-key").value;
+  const on = !!(scan && key);
+  for (const id of ["p-apply", "p-export", "p-import"]) $(id).disabled = !on;
+  $("p-card").hidden = !on;
+  if (!on) { propRows = []; return; }
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem(mapKey(key)) || "{}"); } catch (e) { /* ignore */ }
+  const numeric = (s) => { const n = parseFloat(s); return isNaN(n) ? null : n; };
+  let rows = [...scan.keys.get(key)].map(([value, objs]) => ({ value, objs, count: objs.length }));
+  const allNum = rows.every(r => numeric(r.value) != null);
+  rows.sort((a, b) => allNum ? numeric(a.value) - numeric(b.value) : (b.count - a.count || (a.value < b.value ? -1 : 1)));
+  if (rows.length > 200) {          // keep the table usable: the 199 biggest values, the rest together
+    const big = [...rows].sort((a, b) => b.count - a.count), keepSet = new Set(big.slice(0, 199)), rest = big.slice(199);
+    rows = rows.filter(r => keepSet.has(r));
+    rows.push({ value: "(" + rest.length + " other values)", objs: rest.flatMap(r => r.objs), count: rest.reduce((n, r) => n + r.count, 0), other: true });
+  }
+  rows.forEach((r, i) => { r.color = saved[r.value] || (r.other ? "#9aa0ab" : PALETTE[i % PALETTE.length]); });
+  propRows = rows;
+  renderProp();
+}
+function renderProp() {
+  $("p-tbl").querySelector("tbody").innerHTML = propRows.map((r, i) => '<tr class="sel" data-i="' + i + '"><td><input type="color" data-i="' + i + '" value="' + esc(r.color) + '"></td><td>' + esc(r.value) + '</td><td class="num">' + r.count + "</td></tr>").join("");
+  $("p-count").textContent = propRows.length + " value" + (propRows.length === 1 ? "" : "s") + " of " + $("p-key").value;
+}
+function saveMapping() {
+  const o = {}; for (const r of propRows) o[r.value] = r.color;
+  try { localStorage.setItem(mapKey($("p-key").value), JSON.stringify(o)); } catch (e) { /* ignore */ }
+}
+async function colorByProp() {
+  if (!propRows.length) return;
+  msg("p-msg", "Coloring…");
+  try {
+    await resetColors(); dateColorsOn = false;
+    if ($("p-grey").checked) {
+      const has = new Map(); for (const r of propRows) for (const o of r.objs) { if (!has.has(o.modelId)) has.set(o.modelId, new Set()); has.get(o.modelId).add(o.id); }
+      for (const m of models) { const all = await allIds(m), skip = has.get(all.modelId) || new Set(); await paint(all.modelId, all.ids.filter(id => !skip.has(id)), GREY); }
+    }
+    let n = 0;
+    for (const r of propRows) for (const g of groupByModel(r.objs)) { await paint(g.modelId, g.objectRuntimeIds, r.color); n += g.objectRuntimeIds.length; }
+    saveMapping();
+    msg("p-msg", "Colored " + n + " objects by " + $("p-key").value + ".", "ok");
+  } catch (e) { log("colorByProp", e); msg("p-msg", "Could not color the model: " + (e && e.message ? e.message : e), "err"); }
+}
+function importColors(text) {
+  const rows = parseCsv(text); let hit = 0;
+  for (const row of rows) {
+    const ci = row.findIndex(c => /^#?[0-9a-f]{6}$/i.test(c.trim())); if (ci < 0) continue;
+    const color = "#" + row[ci].trim().replace("#", "").toLowerCase();
+    const value = (row.find((c, i) => i !== ci && c.trim() !== "") || "").trim();
+    const r = propRows.find(x => x.value === value) || propRows.find(x => x.value.toLowerCase() === value.toLowerCase());
+    if (r) { r.color = color; hit++; }
+  }
+  renderProp(); saveMapping();
+  msg("p-msg", hit ? hit + " color" + (hit === 1 ? "" : "s") + " imported. Click Color model." : "No row of that file matched a value of this property (need a value column and a #RRGGBB column).", hit ? "ok" : "warn");
+}
+const colorsCsv = () => [["Value", "Color", "Objects"]].concat(propRows.map(r => [r.value, r.color, r.count])).map(r => r.map(csvCell).join(",")).join("\r\n");
+
+// ---- wiring ----
+for (const b of document.querySelectorAll("#maintabs button")) b.addEventListener("click", () => {
+  for (const x of document.querySelectorAll("#maintabs button")) x.classList.toggle("active", x === b);
+  $("tab-dates").hidden = b.dataset.tab !== "dates"; $("tab-prop").hidden = b.dataset.tab !== "prop";
+});
+$("d-save").addEventListener("click", () => saveSelection(false));
+$("d-clear").addEventListener("click", () => saveSelection(true));
+$("d-reload").addEventListener("click", () => loadRecords(true).catch(e => msg("d-msg", "Could not read the saved dates: " + e.message, "err")));
+$("c-apply").addEventListener("click", colorByDates);
+$("c-reset").addEventListener("click", async () => { await resetColors(); dateColorsOn = false; msg("c-msg", "Colors reset."); });
+$("c-mode").addEventListener("change", () => { renderLegend(); if (dateColorsOn) colorByDates(); });
+$("c-asof").addEventListener("change", () => { renderLegend(); if (dateColorsOn) colorByDates(); });
+$("d-filter").addEventListener("input", renderDates);
+$("d-csv").addEventListener("click", () => download("installation_dates_" + today() + ".csv", datesCsv(), "text/csv"));
+$("d-tbl").addEventListener("click", (ev) => {
+  const tr = ev.target.closest("tr.sel"); if (!tr) return;
+  const r = visibleRecords()[+tr.dataset.i]; if (!r || !r.rt) return;
+  for (const x of $("d-tbl").querySelectorAll("tr.active")) x.classList.remove("active"); tr.classList.add("active");
+  selectObjects(groupByModel([r.rt]), true);
+});
+$("d-legend").addEventListener("click", (ev) => { const tr = ev.target.closest("tr.sel"); if (!tr) return; const b = legend[+tr.dataset.i]; if (b) selectObjects(groupByModel(b.recs.filter(r => r.rt).map(r => r.rt)), false); });
+$("p-scan").addEventListener("click", scanModels);
+$("p-find").addEventListener("input", () => { fillKeys(); pickKey(); });
+$("p-key").addEventListener("change", pickKey);
+$("p-apply").addEventListener("click", colorByProp);
+$("p-reset").addEventListener("click", async () => { await resetColors(); dateColorsOn = false; msg("p-msg", "Colors reset."); });
+$("p-export").addEventListener("click", () => download("colors_" + $("p-key").value.replace(/[^\w]+/g, "_") + ".csv", colorsCsv(), "text/csv"));
+$("p-import").addEventListener("click", () => $("p-file").click());
+$("p-file").addEventListener("change", async (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) importColors(await f.text()); });
+$("p-tbl").addEventListener("input", (ev) => { const i = ev.target.dataset && ev.target.dataset.i; if (i != null && ev.target.type === "color") { propRows[+i].color = ev.target.value; saveMapping(); } });
+$("p-tbl").addEventListener("click", (ev) => { if (ev.target.type === "color") return; const tr = ev.target.closest("tr.sel"); if (!tr) return; const r = propRows[+tr.dataset.i]; if (r) selectObjects(groupByModel(r.objs), false); });
+
+// diagnostic / automation hook (harness and browser automation post from the top frame)
+window.addEventListener("message", async (ev) => {
+  const d = ev.data; if (!d || !d.plateauCmd) return;
+  const reply = (o) => { try { ev.source.postMessage(Object.assign({ plateauResult: d.plateauCmd, from: "install" }, o), "*"); } catch (e) { log("reply", e); } };
+  const c = d.plateauCmd;
+  if (c === "status") reply({ text: VERSION + " models=" + models.length + " records=" + records.size + " scan=" + (scan ? scan.count : "no") });
+  else if (c === "saveDate") { if (d.date) $("d-date").value = d.date; if (d.status) $("d-status").value = d.status; await saveSelection(false); reply({ text: $("d-msg").textContent }); }
+  else if (c === "clearDate") { await saveSelection(true); reply({ text: $("d-msg").textContent }); }
+  else if (c === "load") { try { await loadRecords(true); } catch (e) { msg("d-msg", "load failed: " + e.message, "err"); } reply({ text: $("d-msg").textContent }); }
+  else if (c === "colorDates") { if (d.mode) $("c-mode").value = d.mode; if (d.asof) $("c-asof").value = d.asof; await colorByDates(); reply({ text: $("c-msg").textContent + " | " + legend.map(b => b.label + "=" + b.recs.length + " " + b.color).join(", ") }); }
+  else if (c === "records") reply({ text: datesCsv() });
+  else if (c === "scan") { await scanModels(); reply({ text: $("p-msg").textContent }); }
+  else if (c === "colorProp") { $("p-find").value = ""; fillKeys(); $("p-key").value = d.key || ""; pickKey(); await colorByProp(); reply({ text: $("p-msg").textContent + " | " + colorsCsv().replace(/\r\n/g, " / ") }); }
+  else if (c === "importColors") { importColors(d.csv || ""); reply({ text: $("p-msg").textContent }); }
+  else if (c === "reset") { await resetColors(); reply({ text: "reset" }); }
+});
+
+init().catch(err => { $("view-connecting").textContent = "Could not connect to Trimble Connect: " + err.message; });
+</script>
+</body>
+</html>
