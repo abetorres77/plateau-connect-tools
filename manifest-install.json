@@ -1,8 +1,8 @@
 {
-  "title": "PEI Color & Dates",
+  "title": "PEI Tracker",
   "url": "https://abetorres77.github.io/plateau-connect-tools/install.html",
   "icon": "https://abetorres77.github.io/plateau-connect-tools/icon.png",
-  "description": "Plateau Excavation installation dates and model coloring in the 3D Viewer: save an installation date on the selected objects (stored in the Connect project as a property set), color the model by installed / planned, month or week, or by any property with colors editable in Excel.",
+  "description": "Plateau Excavation installation dates and model coloring in the 3D Viewer: save an installation date and a color on the selected objects in one click (stored in the Connect project as a property set), export what is installed to Excel, color the model by saved color, installed / planned, month or week, or by any property.",
   "extensionType": ["3dviewer"],
   "type": "panel",
   "enabled": true
