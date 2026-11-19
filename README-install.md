@@ -1,6 +1,6 @@
 # PEI Tracker
 
-Trimble Connect 3D Viewer tool (build v2026.11.19c; first build was called "Color & Dates"). Sixth tool of the Plateau Tools extension, menu item **Tracker**.
+Trimble Connect 3D Viewer tool (build v2026.11.19d; first build was called "Color & Dates"). Sixth tool of the Plateau Tools extension, menu item **Tracker**.
 Modelled on Construsoft's "Color Models Extension for Trimble Connect" (https://marketplace.trimble.com/en/product/650979), plus installation dates saved in the Connect project.
 
 ## Files in this folder
@@ -20,7 +20,7 @@ The menu entry lives in `Y:\Private\abe.torres\Claude Drive\Trimble Connect\inde
 
 One window: selected count, date, color, **Save**; **Export to Excel**; **Delete saved dates**; the list of saved dates. Status / note, the other coloring modes, Reload and CSV are under *More options*. The model is painted from the saved colors whenever the dates are read.
 
-**Delete saved dates**: with objects selected it deletes their dates; with nothing selected it asks for a second click and then deletes every saved date in the project.
+**Delete saved dates**: tick the checkboxes in the saved-dates list (the header box ticks every date shown) and it deletes those; with nothing ticked but objects selected in the model it deletes their dates; with nothing selected it asks for a second click and then deletes every saved date in the project.
 
 1. Select objects in the viewer.
 2. Pick the date and the color (Installed or Planned, optional note). The last color used is remembered per status.
