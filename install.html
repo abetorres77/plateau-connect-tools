@@ -76,7 +76,7 @@
         </div>
         <div class="row">
           <button class="secondary small" id="d-xlsx" title="Excel workbook of what is installed">Export to Excel</button>
-          <button class="ghost small" id="d-clear" title="With objects selected: deletes their saved dates. With nothing selected: deletes every saved date (asks first).">Delete saved dates</button>
+          <button class="ghost small" id="d-clear" title="Deletes the dates checked in the list. Nothing checked: the dates of the objects selected in the model. Nothing checked or selected: every saved date (asks first).">Delete saved dates</button>
         </div>
         <div class="status" id="d-msg"></div>
 
@@ -84,8 +84,8 @@
           <h2 style="flex:1;margin:0">Saved dates <span class="muted" id="d-count"></span></h2>
           <input type="search" id="d-filter" placeholder="Find object, model, note…" style="min-width:120px">
         </div>
-        <div class="table-scroll"><table id="d-tbl"><thead><tr><th></th><th>Date</th><th>Status</th><th>Object</th><th>Model</th><th>Note</th></tr></thead><tbody></tbody></table></div>
-        <div class="muted">Click a row to select the object and zoom to it. Grey rows belong to a model that is not loaded.</div>
+        <div class="table-scroll"><table id="d-tbl"><thead><tr><th><input type="checkbox" id="d-all" title="Check every date shown"></th><th></th><th>Date</th><th>Status</th><th>Object</th><th>Model</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+        <div class="muted">Check the dates you want to delete, then <b>Delete saved dates</b>. Click a row to select the object and zoom to it. Grey rows belong to a model that is not loaded.</div>
 
         <details style="margin-top:8px">
           <summary style="cursor:pointer;font-weight:600;font-size:12px">More options</summary>
@@ -143,7 +143,7 @@
 <script type="module">
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
-const VERSION = "v2026.11.19c";
+const VERSION = "v2026.11.19d";
 const DEFAULT_COLOR = { Installed: "#1e8a44", Planned: "#0063a3" };
 const isHex = (s) => /^#[0-9a-f]{6}$/i.test(s || "");
 const LIB_NAME = "PEI Install Tracking", DEF_ID = "installation", DEF_NAME = "PEI Installation";
@@ -574,8 +574,11 @@ async function saveSelection(clear) {
 
 // ---- delete: the selection's dates, or (nothing selected, second click) every saved date ----
 let armed = 0;
-const disarm = () => { armed = 0; $("d-clear").textContent = "Delete saved dates"; };
+const checked = new Set();          // links ticked in the saved-dates list
+const updateDeleteLabel = () => { if (!armed) $("d-clear").textContent = checked.size ? "Delete checked (" + checked.size + ")" : "Delete saved dates"; };
+const disarm = () => { armed = 0; updateDeleteLabel(); };
 async function deleteClick() {
+  if (checked.size) { disarm(); return deleteAll([...checked].map(k => records.get(k)).filter(Boolean)); }
   let n = 0;
   try { n = ((await API.viewer.getSelection()) || []).reduce((a, g) => a + ((g.objectRuntimeIds || []).length), 0); } catch (e) { /* ignore */ }
   if (n) { disarm(); return saveSelection(true); }
@@ -588,11 +591,11 @@ async function deleteClick() {
   }
   disarm(); await deleteAll();
 }
-async function deleteAll() {
+async function deleteAll(list) {
   if (busy) return; busy = true; $("d-save").disabled = true; $("d-clear").disabled = true;
   try {
     msg("d-msg", "Deleting the saved dates…");
-    const s = await ensureStore(), all = [...records.values()]; let failed = 0;
+    const s = await ensureStore(), all = list || [...records.values()]; let failed = 0;
     for (let i = 0; i < all.length; i += 400) {
       const part = all.slice(i, i + 400);
       let r = await api(s.pset, "/psets/changeset", { method: "POST", body: { items: part.map(x => ({ link: x.link, libId: s.libId, defId: DEF_ID, props: {}, deleted: true })) } });
@@ -601,7 +604,7 @@ async function deleteAll() {
       }
       if (!r.ok) throw new Error("Connect refused the delete (" + errText(r) + ")");
       const bad = new Set(((r.body && r.body.errors) || []).map(e => e.item && e.item.link)); failed += bad.size;
-      for (const x of part) if (!bad.has(x.link)) records.delete(x.link);
+      for (const x of part) if (!bad.has(x.link)) { records.delete(x.link); checked.delete(x.link); }
     }
     await resetColors(); dateColorsOn = false; renderDates();
     if (records.size) await colorByDates();
@@ -673,7 +676,10 @@ function visibleRecords() {
 }
 function renderDates() {
   const list = visibleRecords();
-  $("d-tbl").querySelector("tbody").innerHTML = list.map((r, i) => '<tr class="sel' + (r.rt ? "" : " off") + '" data-i="' + i + '"><td><span class="sw" style="background:' + recColor(r) + ';margin:0"></span></td><td>' + esc(r.installDate) + "</td><td>" + esc(r.status) + "</td><td>" + esc(r.objectName) + "</td><td>" + esc(r.modelName) + "</td><td>" + esc(r.note) + "</td></tr>").join("");
+  $("d-tbl").querySelector("tbody").innerHTML = list.map((r, i) => '<tr class="sel' + (r.rt ? "" : " off") + '" data-i="' + i + '"><td><input type="checkbox" class="ck" data-link="' + esc(r.link) + '"' + (checked.has(r.link) ? " checked" : "") + '></td><td><span class="sw" style="background:' + recColor(r) + ';margin:0"></span></td><td>' + esc(r.installDate) + "</td><td>" + esc(r.status) + "</td><td>" + esc(r.objectName) + "</td><td>" + esc(r.modelName) + "</td><td>" + esc(r.note) + "</td></tr>").join("");
+  for (const k of [...checked]) if (!records.has(k)) checked.delete(k);
+  $("d-all").checked = list.length > 0 && list.every(r => checked.has(r.link));
+  updateDeleteLabel();
   $("d-count").textContent = "(" + (list.length === records.size ? records.size : list.length + " of " + records.size) + ")";
   renderLegend();
 }
@@ -880,7 +886,9 @@ $("d-xlsx").addEventListener("click", exportXlsx);
 function statusColor() { const s = $("d-status").value; let c = ""; try { c = localStorage.getItem("plateau:tracker:color:" + s) || ""; } catch (e) { /* ignore */ } $("d-color").value = isHex(c) ? c : DEFAULT_COLOR[s]; }
 $("d-status").addEventListener("change", statusColor); statusColor();
 $("d-csv").addEventListener("click", () => download("installation_dates_" + today() + ".csv", datesCsv(), "text/csv"));
+$("d-all").addEventListener("change", (ev) => { for (const r of visibleRecords()) { if (ev.target.checked) checked.add(r.link); else checked.delete(r.link); } renderDates(); });
 $("d-tbl").addEventListener("click", (ev) => {
+  if (ev.target.classList && ev.target.classList.contains("ck")) { if (ev.target.checked) checked.add(ev.target.dataset.link); else checked.delete(ev.target.dataset.link); $("d-all").checked = visibleRecords().every(r => checked.has(r.link)); updateDeleteLabel(); return; }
   const tr = ev.target.closest("tr.sel"); if (!tr) return;
   const r = visibleRecords()[+tr.dataset.i]; if (!r || !r.rt) return;
   for (const x of $("d-tbl").querySelectorAll("tr.active")) x.classList.remove("active"); tr.classList.add("active");
@@ -905,6 +913,7 @@ window.addEventListener("message", async (ev) => {
   const c = d.plateauCmd;
   if (c === "status") reply({ text: VERSION + " models=" + models.length + " records=" + records.size + " scan=" + (scan ? scan.count : "no") });
   else if (c === "saveDate") { if (d.date) $("d-date").value = d.date; if (d.status) { $("d-status").value = d.status; statusColor(); } if (d.color) $("d-color").value = d.color; await saveSelection(false); reply({ text: $("d-msg").textContent }); }
+  else if (c === "checkFirst") { visibleRecords().slice(0, d.n || 1).forEach(r => checked.add(r.link)); renderDates(); reply({ text: $("d-clear").textContent + " | boxes ticked in the table: " + document.querySelectorAll("#d-tbl .ck:checked").length }); }
   else if (c === "deleteAll") { await deleteAll(); reply({ text: $("d-msg").textContent }); }
   else if (c === "deleteClick") { await deleteClick(); reply({ text: $("d-clear").textContent + " | " + $("d-msg").textContent }); }
   else if (c === "clearDate") { await saveSelection(true); reply({ text: $("d-msg").textContent }); }
