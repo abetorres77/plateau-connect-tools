@@ -232,17 +232,17 @@
 
   <div id="view-install">
     <div class="card">
-      <h2>Color &amp; Dates &mdash; installation dates and color by property</h2>
-      <p class="muted">Select objects in the <strong>3D Viewer</strong> and save their installation date. The dates are stored in this Connect project (property set <strong>PEI Installation</strong>), so everyone on the project sees them, and the model can be colored by installed / planned, by month or by week. A second tab colors the model by any property (system, material, size&hellip;) with colors you can export to and import from Excel.</p>
+      <h2>Tracker &mdash; installation dates, colors and Excel export</h2>
+      <p class="muted">Select objects in the <strong>3D Viewer</strong> and save their installation date and a color in one click; <strong>Export to Excel</strong> lists what is installed. The dates are stored in this Connect project (property set <strong>PEI Installation</strong>), so everyone on the project sees them, and the model can be colored by installed / planned, by month or by week. A second tab colors the model by any property (system, material, size&hellip;) with colors you can export to and import from Excel.</p>
       <p>Because it works on the loaded models, the tool runs inside the 3D Viewer rather than on this page:</p>
       <ol class="steps">
         <li>Open the 3D Viewer and load the model(s).</li>
-        <li>Click the <strong>Plateau Tools</strong> icon (black &amp; gold) at the bottom of the viewer&#39;s left toolbar and pick <strong>Color &amp; Dates</strong>.</li>
-        <li>Select objects, pick the date, <strong>Save date to selection</strong>. A project admin has to save the first date (that creates the library).</li>
+        <li>Click the <strong>Plateau Tools</strong> icon (black &amp; gold) at the bottom of the viewer&#39;s left toolbar and pick <strong>Tracker</strong>.</li>
+        <li>Select objects, pick the date, <strong>Save date and color</strong>. A project admin has to save the first date (that creates the library).</li>
       </ol>
       <div class="row">
         <button id="btn-open-viewer-install">Open the 3D Viewer</button>
-        <span class="muted">Opens this project&#39;s 3D Viewer with Color &amp; Dates as the active tool.</span>
+        <span class="muted">Opens this project&#39;s 3D Viewer with Tracker as the active tool.</span>
       </div>
       <div id="install-status" class="muted"></div>
     </div>
@@ -257,7 +257,7 @@
       <div class="row"><button class="launch" data-tool="props" style="width:100%;text-align:left">Object Properties<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Description, material, size, layer, elevations and coordinates of the selected objects</span></button></div>
       <div class="row"><button class="launch" data-tool="completion" style="width:100%;text-align:left">Progress %<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Percent complete: proposed model vs as-built model, by pipe length and structure count</span></button></div>
       <div class="row"><button class="launch" data-tool="paving" style="width:100%;text-align:left">Paving &amp; Concrete<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Asphalt SF / SY / tons, sidewalk and slab SF / CY, curb LF by type from the loaded models</span></button></div>
-      <div class="row"><button class="launch" data-tool="install" style="width:100%;text-align:left">Color &amp; Dates<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Save installation dates on objects in Connect; color the model by date or by any property</span></button></div>
+      <div class="row"><button class="launch" data-tool="install" style="width:100%;text-align:left">Tracker<br><span class="muted" style="font-weight:400;color:#fff;opacity:.85">Save an installation date and color on objects in Connect, export what is installed to Excel, color by any property</span></button></div>
     </div>
   </div>
 
@@ -350,7 +350,7 @@ async function init() {
       { title: "Object Properties", icon: ICON, command: "props" },
       { title: "Progress %", icon: ICON, command: "completion" },
       { title: "Paving & Concrete", icon: ICON, command: "paving" },
-      { title: "Color & Dates", icon: ICON, command: "install" },
+      { title: "Tracker", icon: ICON, command: "install" },
       { title: "File Converter", icon: ICON, command: "convert" },
       { title: "QTO Takeoff", icon: ICON, command: "qto" },
       { title: "About", icon: ICON, command: "about" }
