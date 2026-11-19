@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PEI Color &amp; Dates</title>
+<title>PEI Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet"><style>
   :root {
     --navy: #252a2e; --blue: #0063a3; --blue-dark: #004f83; --orange: #f2c244; /* Plateau yellow accent */
@@ -56,55 +56,57 @@
   @media (max-width: 420px) { main { padding: 6px; } .card { padding: 8px; } th, td { padding: 2px 4px; font-size: 11px; } }
 </style></head>
 <body>
-<header><div class="dot"></div><h1>Color &amp; Dates</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="ver" id="ver"></span></header>
+<header><div class="dot"></div><h1>Tracker</h1><nav class="switch" id="switch"><a href="./index.html" class="on">&#9776; Tools</a><a href="#" class="close" id="close-tool" title="Close this tool and show the tools menu">&#10005;</a></nav><span class="ver" id="ver"></span></header>
 <main>
   <div id="view-connecting" class="card">Connecting to Trimble Connect…</div>
 
   <div id="app" hidden>
-    <div class="tabs" id="maintabs"><button class="active" data-tab="dates">Installation dates</button><button data-tab="prop">Color by property</button></div>
+    <div class="tabs" id="maintabs"><button class="active" data-tab="dates">Installation date</button><button data-tab="prop">Color by property</button></div>
 
     <!-- ===================== Installation dates ===================== -->
     <div id="tab-dates">
       <div class="card">
-        <h2>Set the installation date</h2>
-        <div class="muted">Select objects in the model, pick the date, then save. The date is stored in this Connect project (property set <b>PEI Installation</b>) so everyone on the project sees it.</div>
+        <h2>Installation date</h2>
+        <div class="muted">Select objects in the model, pick the date and the color, then save. It is stored in this Connect project and the objects are painted right away.</div>
         <div class="row">
           <div><div class="big" id="sel-count">0</div><div class="muted">selected</div></div>
           <div><label>Installation date</label><input type="date" id="d-date"></div>
-          <div><label>Status</label><select id="d-status"><option>Installed</option><option>Planned</option></select></div>
-          <div class="grow"><label>Note (optional)</label><input type="text" id="d-note" maxlength="200"></div>
+          <div><label>Color</label><input type="color" id="d-color" value="#1e8a44" style="width:44px;height:30px"></div>
+          <button id="d-save">Save</button>
         </div>
         <div class="row">
-          <button id="d-save">Save date to selection</button>
-          <button class="ghost small" id="d-clear">Clear date on selection</button>
-          <button class="ghost small" id="d-reload" title="Read the saved dates from Connect again">Reload from Connect</button>
+          <button class="secondary small" id="d-xlsx" title="Excel workbook of what is installed">Export to Excel</button>
+          <button class="ghost small" id="d-clear" title="With objects selected: deletes their saved dates. With nothing selected: deletes every saved date (asks first).">Delete saved dates</button>
         </div>
         <div class="status" id="d-msg"></div>
-      </div>
 
-      <div class="card">
-        <h2>Color the model by installation date</h2>
-        <div class="row">
-          <div><label>Color by</label><select id="c-mode"><option value="status">Installed / planned</option><option value="month">Month installed</option><option value="week">Week installed</option></select></div>
-          <div><label>As of</label><input type="date" id="c-asof" title="Dates after this day count as planned"></div>
-          <label class="inline"><input type="checkbox" id="c-grey" checked> Grey out objects without a date</label>
-        </div>
-        <div class="row">
-          <button id="c-apply">Color model</button>
-          <button class="ghost small" id="c-reset">Reset colors</button>
-        </div>
-        <div class="table-scroll" style="max-height:22vh"><table id="d-legend"><tbody></tbody></table></div>
-        <div class="status" id="c-msg"></div>
-      </div>
-
-      <div class="card">
-        <div class="row" style="margin-top:0">
+        <div class="row" style="margin-top:10px">
           <h2 style="flex:1;margin:0">Saved dates <span class="muted" id="d-count"></span></h2>
           <input type="search" id="d-filter" placeholder="Find object, model, note…" style="min-width:120px">
-          <button class="ghost small" id="d-csv">CSV</button>
         </div>
-        <div class="table-scroll"><table id="d-tbl"><thead><tr><th>Date</th><th>Status</th><th>Object</th><th>Model</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+        <div class="table-scroll"><table id="d-tbl"><thead><tr><th></th><th>Date</th><th>Status</th><th>Object</th><th>Model</th><th>Note</th></tr></thead><tbody></tbody></table></div>
         <div class="muted">Click a row to select the object and zoom to it. Grey rows belong to a model that is not loaded.</div>
+
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;font-weight:600;font-size:12px">More options</summary>
+          <div class="row">
+            <div><label>Status</label><select id="d-status"><option>Installed</option><option>Planned</option></select></div>
+            <div class="grow"><label>Note (saved with the date)</label><input type="text" id="d-note" maxlength="200"></div>
+          </div>
+          <div class="row">
+            <div><label>Color the model by</label><select id="c-mode"><option value="color">Saved color</option><option value="status">Installed / planned</option><option value="month">Month installed</option><option value="week">Week installed</option></select></div>
+            <div><label>As of</label><input type="date" id="c-asof" title="Dates after this day count as planned (not used with Saved color)"></div>
+            <label class="inline"><input type="checkbox" id="c-grey"> Grey out objects without a date</label>
+          </div>
+          <div class="row">
+            <button class="small" id="c-apply">Color model</button>
+            <button class="ghost small" id="c-reset">Reset colors</button>
+            <button class="ghost small" id="d-reload" title="Read the saved dates from Connect again">Reload from Connect</button>
+            <button class="ghost small" id="d-csv">CSV</button>
+          </div>
+          <div class="table-scroll" style="max-height:22vh"><table id="d-legend"><tbody></tbody></table></div>
+          <div class="status" id="c-msg"></div>
+        </details>
       </div>
     </div>
 
@@ -141,7 +143,9 @@
 <script type="module">
 import * as WorkspaceAPI from "./trimbleconnect.workspace.api.js";
 
-const VERSION = "v2026.11.19a";
+const VERSION = "v2026.11.19c";
+const DEFAULT_COLOR = { Installed: "#1e8a44", Planned: "#0063a3" };
+const isHex = (s) => /^#[0-9a-f]{6}$/i.test(s || "");
 const LIB_NAME = "PEI Install Tracking", DEF_ID = "installation", DEF_NAME = "PEI Installation";
 const CHUNK = 250, GREY = "#c9ccd1";
 const HARNESS = new URLSearchParams(location.search).get("harness") === "1";
@@ -243,7 +247,7 @@ async function init() {
     else if (event === "extension.accessToken") { const t = tokenFrom(data); if (t) accessToken = t; }
   }, 180000);
   if (!API.viewer) {
-    $("view-connecting").innerHTML = "<h2>Open this tool inside the 3D Viewer</h2><p class='muted'>Color &amp; Dates works on the models loaded in the 3D Viewer, so open it from the Plateau Tools icon in the viewer&#39;s left toolbar.</p>";
+    $("view-connecting").innerHTML = "<h2>Open this tool inside the 3D Viewer</h2><p class='muted'>Tracker works on the models loaded in the 3D Viewer, so open it from the Plateau Tools icon in the viewer&#39;s left toolbar.</p>";
     return;
   }
   $("view-connecting").hidden = true; $("app").hidden = false;
@@ -359,8 +363,8 @@ async function findStore() {
 }
 const DEF = {
   id: DEF_ID, name: DEF_NAME, types: [],
-  i18n: { "en-US": { name: DEF_NAME, props: { installDate: "Installation Date", status: "Status", note: "Note", objectName: "Object", modelName: "Model", externalId: "Object ID" } } },
-  schema: { props: { installDate: { type: "string", format: "date" }, status: { type: "string" }, note: { type: "string" }, objectName: { type: "string" }, modelName: { type: "string" }, externalId: { type: "string" } } }
+  i18n: { "en-US": { name: DEF_NAME, props: { installDate: "Installation Date", status: "Status", color: "Color", note: "Note", objectName: "Object", modelName: "Model", externalId: "Object ID" } } },
+  schema: { props: { installDate: { type: "string", format: "date" }, status: { type: "string" }, color: { type: "string" }, note: { type: "string" }, objectName: { type: "string" }, modelName: { type: "string" }, externalId: { type: "string" } } }
 };
 // Creates the library the first time somebody saves a date (the person doing that needs to be a project admin).
 async function ensureStore() {
@@ -385,12 +389,16 @@ async function ensureStore() {
     const nr = await api(s.org, forest + "/trees/ProjectContext/nodes/PSetLibs", { method: "PATCH", body: { add: ["frn:lib:" + s.libId] } });
     if (!nr.ok) s.notes.push("library not registered with the project (" + errText(nr) + "): dates are saved, but may not show in Connect's own Properties panel");
   } else if (r.status === 403) {
-    throw new Error("You do not have access to this project's installation-date library. Ask a project admin to open Color & Dates and save a date once.");
+    throw new Error("You do not have access to this project's installation-date library. Ask a project admin to open Tracker and save a date once.");
   } else if (!r.ok) throw new Error("Property set service answered " + errText(r));
   const d = await api(s.pset, lib + "/defs/" + DEF_ID);
   if (d.status === 404) {
     const c = await api(s.pset, lib + "/defs", { method: "POST", body: DEF });
     if (!c.ok && c.status !== 409) throw new Error("Could not create the property set definition (" + errText(c) + ")");
+  } else if (d.ok && !(d.body && d.body.schema && d.body.schema.props && d.body.schema.props.color)) {
+    // library made by the first build (no Color property): add it
+    const u = await api(s.pset, lib + "/defs/" + DEF_ID, { method: "PATCH", body: { name: DEF.name, types: DEF.types, i18n: DEF.i18n, schema: DEF.schema } });
+    if (!u.ok) s.notes.push("could not add the Color property to the existing library (" + errText(u) + "); a project admin has to save once with this version");
   }
   s.ready = true; s.exists = true;
   return s;
@@ -400,7 +408,7 @@ async function ensureStore() {
 const records = new Map();          // link -> { link, externalId, installDate, status, note, objectName, modelName, rt:{modelId,id}|null }
 function recFromPset(ps) {
   const p = ps.props || {};
-  return { link: ps.link, externalId: p.externalId || String(ps.link || "").replace(/^frn:entity:/, ""), installDate: p.installDate || "", status: p.status || "Installed", note: p.note || "", objectName: p.objectName || "", modelName: p.modelName || "", modifiedAt: ps.modifiedAt || "", rt: null };
+  return { link: ps.link, externalId: p.externalId || String(ps.link || "").replace(/^frn:entity:/, ""), installDate: p.installDate || "", status: p.status || "Installed", color: isHex(p.color) ? p.color.toLowerCase() : "", note: p.note || "", objectName: p.objectName || "", modelName: p.modelName || "", modifiedAt: ps.modifiedAt || "", rt: null };
 }
 async function loadRecords(announce) {
   const s = await findStore();
@@ -420,6 +428,7 @@ async function loadRecords(announce) {
   for (const ps of got) { const rec = recFromPset(ps); if (isDate(rec.installDate)) records.set(rec.link, rec); }
   await resolveRuntime();
   renderDates();
+  if (records.size) await colorByDates();
   msg("d-msg", records.size + " saved installation date" + (records.size === 1 ? "" : "s") + " read from Connect.", announce ? "ok" : "");
 }
 // find each saved object in the loaded models
@@ -526,13 +535,14 @@ async function saveSelection(clear) {
     if (!good.length) { msg("d-msg", "The viewer gave no permanent id for the selected objects, so a date cannot be attached to them.", "err"); return; }
     msg("d-msg", "Saving to Connect…");
     const s = await ensureStore();
-    const status = $("d-status").value, note = $("d-note").value.trim();
+    const status = $("d-status").value, note = $("d-note").value.trim(), color = isHex($("d-color").value) ? $("d-color").value.toLowerCase() : DEFAULT_COLOR[status];
+    try { localStorage.setItem("plateau:tracker:color:" + status, color); } catch (e) { /* ignore */ }
     let failed = 0, firstErr = "";
     for (let i = 0; i < good.length; i += 400) {
       const part = good.slice(i, i + 400);
       const body = { items: part.map(it => clear
         ? { link: it.link, libId: s.libId, defId: DEF_ID, props: {}, deleted: true }
-        : { link: it.link, libId: s.libId, defId: DEF_ID, props: Object.assign({ installDate: date, status, objectName: it.name.slice(0, 200), modelName: it.modelName, externalId: it.externalId }, note ? { note } : {}) }) };
+        : { link: it.link, libId: s.libId, defId: DEF_ID, props: Object.assign({ installDate: date, status, color, objectName: it.name.slice(0, 200), modelName: it.modelName, externalId: it.externalId }, note ? { note } : {}) }) };
       let r = await api(s.pset, "/psets/changeset", { method: "POST", body });
       if (clear && (!r.ok || (r.body && r.body.errorCount))) {
         // members without delete rights: blank the date instead (records without a date are ignored)
@@ -545,28 +555,72 @@ async function saveSelection(clear) {
       for (const it of part) {
         if (bad.has(it.link)) continue;
         if (clear) records.delete(it.link);
-        else records.set(it.link, { link: it.link, externalId: it.externalId, installDate: date, status, note, objectName: it.name, modelName: it.modelName, modifiedAt: new Date().toISOString(), rt: { modelId: (byModel(it.modelId) || { id: it.modelId }).id, id: it.id } });
+        else records.set(it.link, { link: it.link, externalId: it.externalId, installDate: date, status, color, note, objectName: it.name, modelName: it.modelName, modifiedAt: new Date().toISOString(), rt: { modelId: (byModel(it.modelId) || { id: it.modelId }).id, id: it.id } });
       }
     }
     renderDates();
     const done = good.length - failed;
-    let text = clear ? "Cleared the date on " + done + " object" + (done === 1 ? "" : "s") + "." : "Saved " + date + " on " + done + " object" + (done === 1 ? "" : "s") + ".";
+    let text = clear ? "Deleted the saved date on " + done + " object" + (done === 1 ? "" : "s") + "." : "Saved " + date + " and the color on " + done + " object" + (done === 1 ? "" : "s") + ".";
     if (failed) text += " " + failed + " failed" + (firstErr ? " (" + firstErr + ")" : "") + ".";
     if (noId) text += " " + noId + " had no permanent id and were skipped.";
     if (s.notes.length) { text += " Note: " + s.notes.join("; ") + "."; s.notes = []; }
     msg("d-msg", text, failed || noId ? "warn" : "ok");
-    if (dateColorsOn) await colorByDates();
+    await colorByDates();           // one click: saved and painted
+    msg("d-msg", text, failed || noId ? "warn" : "ok");
   } catch (e) {
     log("save failed", e); msg("d-msg", "Not saved: " + (e && e.message ? e.message : e), "err");
   } finally { busy = false; $("d-save").disabled = false; $("d-clear").disabled = false; }
 }
 
+// ---- delete: the selection's dates, or (nothing selected, second click) every saved date ----
+let armed = 0;
+const disarm = () => { armed = 0; $("d-clear").textContent = "Delete saved dates"; };
+async function deleteClick() {
+  let n = 0;
+  try { n = ((await API.viewer.getSelection()) || []).reduce((a, g) => a + ((g.objectRuntimeIds || []).length), 0); } catch (e) { /* ignore */ }
+  if (n) { disarm(); return saveSelection(true); }
+  if (!records.size) { msg("d-msg", "There are no saved dates to delete.", "warn"); return; }
+  if (!armed || Date.now() - armed > 8000) {
+    armed = Date.now(); $("d-clear").textContent = "Click again to delete all " + records.size;
+    msg("d-msg", "Nothing is selected, so this deletes every saved date in this project (" + records.size + "). Click the button again to confirm, or select objects to delete only theirs.", "warn");
+    setTimeout(() => { if (armed && Date.now() - armed >= 8000) disarm(); }, 8100);
+    return;
+  }
+  disarm(); await deleteAll();
+}
+async function deleteAll() {
+  if (busy) return; busy = true; $("d-save").disabled = true; $("d-clear").disabled = true;
+  try {
+    msg("d-msg", "Deleting the saved dates…");
+    const s = await ensureStore(), all = [...records.values()]; let failed = 0;
+    for (let i = 0; i < all.length; i += 400) {
+      const part = all.slice(i, i + 400);
+      let r = await api(s.pset, "/psets/changeset", { method: "POST", body: { items: part.map(x => ({ link: x.link, libId: s.libId, defId: DEF_ID, props: {}, deleted: true })) } });
+      if (!r.ok || (r.body && r.body.errorCount)) {   // members without delete rights: blank the date instead
+        r = await api(s.pset, "/psets/changeset", { method: "POST", body: { items: part.map(x => ({ link: x.link, libId: s.libId, defId: DEF_ID, props: { status: "Cleared", objectName: x.objectName, modelName: x.modelName, externalId: x.externalId } })) } });
+      }
+      if (!r.ok) throw new Error("Connect refused the delete (" + errText(r) + ")");
+      const bad = new Set(((r.body && r.body.errors) || []).map(e => e.item && e.item.link)); failed += bad.size;
+      for (const x of part) if (!bad.has(x.link)) records.delete(x.link);
+    }
+    await resetColors(); dateColorsOn = false; renderDates();
+    if (records.size) await colorByDates();
+    msg("d-msg", "Deleted " + (all.length - failed) + " saved date" + (all.length - failed === 1 ? "" : "s") + "." + (failed ? " " + failed + " could not be deleted." : ""), failed ? "warn" : "ok");
+  } catch (e) { log("deleteAll", e); msg("d-msg", "Not deleted: " + (e && e.message ? e.message : e), "err"); }
+  finally { busy = false; $("d-save").disabled = false; $("d-clear").disabled = false; }
+}
+
 // ---- color by date ----
 let dateColorsOn = false, legend = [];
+const recColor = (r) => r.color || DEFAULT_COLOR[r.status] || DEFAULT_COLOR.Installed;
 function buckets() {
   const mode = $("c-mode").value, asof = isDate($("c-asof").value) ? $("c-asof").value : today();
   const map = new Map();
   const add = (key, label, sort, rec) => { if (!map.has(key)) map.set(key, { key, label, sort, recs: [] }); map.get(key).recs.push(rec); };
+  if (mode === "color") {           // each object in the color that was saved with its date
+    for (const r of records.values()) { const c = recColor(r); add(r.status + c, r.status, (r.status === "Planned" ? "1" : "0") + c, r); map.get(r.status + c).color = c; }
+    return [...map.values()].sort((a, b) => a.sort < b.sort ? -1 : 1);
+  }
   for (const r of records.values()) {
     if (r.installDate > asof || r.status === "Planned") { add("~planned", "Planned / after " + asof, "9999", r); continue; }
     if (mode === "status") add("installed", "Installed", "0", r);
@@ -619,11 +673,76 @@ function visibleRecords() {
 }
 function renderDates() {
   const list = visibleRecords();
-  $("d-tbl").querySelector("tbody").innerHTML = list.map((r, i) => '<tr class="sel' + (r.rt ? "" : " off") + '" data-i="' + i + '"><td>' + esc(r.installDate) + "</td><td>" + esc(r.status) + "</td><td>" + esc(r.objectName) + "</td><td>" + esc(r.modelName) + "</td><td>" + esc(r.note) + "</td></tr>").join("");
+  $("d-tbl").querySelector("tbody").innerHTML = list.map((r, i) => '<tr class="sel' + (r.rt ? "" : " off") + '" data-i="' + i + '"><td><span class="sw" style="background:' + recColor(r) + ';margin:0"></span></td><td>' + esc(r.installDate) + "</td><td>" + esc(r.status) + "</td><td>" + esc(r.objectName) + "</td><td>" + esc(r.modelName) + "</td><td>" + esc(r.note) + "</td></tr>").join("");
   $("d-count").textContent = "(" + (list.length === records.size ? records.size : list.length + " of " + records.size) + ")";
   renderLegend();
 }
-const datesCsv = () => [["Installation Date", "Status", "Object", "Model", "Note", "Object ID"]].concat(visibleRecords().map(r => [r.installDate, r.status, r.objectName, r.modelName, r.note, r.externalId])).map(r => r.map(csvCell).join(",")).join("\r\n");
+const datesCsv = () => [["Installation Date", "Status", "Color", "Object", "Model", "Note", "Object ID"]].concat(visibleRecords().map(r => [r.installDate, r.status, recColor(r), r.objectName, r.modelName, r.note, r.externalId])).map(r => r.map(csvCell).join(",")).join("\r\n");
+
+// ---- Excel export (.xlsx written here: a stored zip of the workbook XML, no library needed) ----
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function zipStore(files) {          // [{name, text}] -> Uint8Array
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  const u16 = (n) => [n & 255, (n >>> 8) & 255], u32 = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+    const head = [].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0));
+    const local = new Uint8Array([0x50, 0x4b, 3, 4].concat(head));
+    parts.push(local, name, data);
+    central.push({ bytes: new Uint8Array([0x50, 0x4b, 1, 2].concat(u16(20), head, u16(0), u16(0), u16(0), u32(0), u32(offset))), name });
+    offset += local.length + name.length + data.length;
+  }
+  let csize = 0; for (const c of central) { parts.push(c.bytes, c.name); csize += c.bytes.length + c.name.length; }
+  parts.push(new Uint8Array([0x50, 0x4b, 5, 6].concat(u16(0), u16(0), u16(files.length), u16(files.length), u32(csize), u32(offset), u16(0))));
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
+function buildXlsx() {
+  const x = (s) => String(s == null ? "" : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const all = [...records.values()].sort((a, b) => a.installDate < b.installDate ? -1 : (a.installDate > b.installDate ? 1 : (a.objectName < b.objectName ? -1 : 1)));
+  const now = today();
+  const installed = all.filter(r => r.status !== "Planned" && r.installDate <= now), planned = all.filter(r => !(r.status !== "Planned" && r.installDate <= now));
+  const colors = [...new Set(all.map(recColor))];
+  const col = (i) => String.fromCharCode(65 + i);
+  const serial = (iso) => Math.round(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86400000) + 25569;
+  const str = (ref, v, s) => '<c r="' + ref + '" t="inlineStr"' + (s ? ' s="' + s + '"' : "") + '><is><t xml:space="preserve">' + x(v) + "</t></is></c>";
+  const HEAD = ["Installation Date", "Status", "Color", "Object", "Model", "Note", "Object ID"], WIDTH = [16, 11, 10, 42, 36, 30, 40];
+  const sheet = (rows) => {
+    let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>'
+      + WIDTH.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join("") + "</cols><sheetData>";
+    xml += '<row r="1">' + HEAD.map((h, i) => str(col(i) + "1", h, 1)).join("") + "</row>";
+    rows.forEach((r, k) => {
+      const n = k + 2, c = recColor(r);
+      xml += '<row r="' + n + '"><c r="A' + n + '" s="2"><v>' + serial(r.installDate) + "</v></c>" + str("B" + n, r.status) + str("C" + n, c, 3 + colors.indexOf(c)) + str("D" + n, r.objectName) + str("E" + n, r.modelName) + str("F" + n, r.note) + str("G" + n, r.externalId) + "</row>";
+    });
+    return xml + '</sheetData><autoFilter ref="A1:G' + Math.max(1, rows.length + 1) + '"/></worksheet>';
+  };
+  const sheets = [{ name: "Installed", rows: installed }].concat(planned.length ? [{ name: "Planned", rows: planned }] : []);
+  const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    + '<fills count="' + (3 + colors.length) + '"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF2C244"/><bgColor indexed="64"/></patternFill></fill>'
+    + colors.map(c => '<fill><patternFill patternType="solid"><fgColor rgb="FF' + c.slice(1).toUpperCase() + '"/><bgColor indexed="64"/></patternFill></fill>').join("") + "</fills>"
+    + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="' + (3 + colors.length) + '"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="14" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    + colors.map((c, i) => '<xf numFmtId="0" fontId="0" fillId="' + (3 + i) + '" borderId="0" xfId="0" applyFill="1"/>').join("") + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  const files = [
+    { name: "[Content_Types].xml", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' + sheets.map((s, i) => '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join("") + "</Types>" },
+    { name: "_rels/.rels", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { name: "xl/workbook.xml", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + sheets.map((s, i) => '<sheet name="' + s.name + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>').join("") + "</sheets></workbook>" },
+    { name: "xl/_rels/workbook.xml.rels", text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + sheets.map((s, i) => '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>').join("") + '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+    { name: "xl/styles.xml", text: styles }
+  ].concat(sheets.map((s, i) => ({ name: "xl/worksheets/sheet" + (i + 1) + ".xml", text: sheet(s.rows) })));
+  return { bytes: zipStore(files), installed: installed.length, planned: planned.length };
+}
+function exportXlsx() {
+  if (!records.size) { msg("d-msg", "No installation dates saved yet, so there is nothing to export.", "warn"); return; }
+  const w = buildXlsx(), a = document.createElement("a");
+  const stem = (project && project.name ? project.name.replace(/[^\w.-]+/g, "_") + "_" : "") + "Installed_" + today();
+  a.href = URL.createObjectURL(new Blob([w.bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })); a.download = stem + ".xlsx";
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  msg("d-msg", "Excel file downloaded: " + w.installed + " installed" + (w.planned ? ", " + w.planned + " planned (second sheet)" : "") + ".", "ok");
+}
 
 // =====================================================================================
 // Color by property
@@ -750,13 +869,16 @@ for (const b of document.querySelectorAll("#maintabs button")) b.addEventListene
   $("tab-dates").hidden = b.dataset.tab !== "dates"; $("tab-prop").hidden = b.dataset.tab !== "prop";
 });
 $("d-save").addEventListener("click", () => saveSelection(false));
-$("d-clear").addEventListener("click", () => saveSelection(true));
+$("d-clear").addEventListener("click", deleteClick);
 $("d-reload").addEventListener("click", () => loadRecords(true).catch(e => msg("d-msg", "Could not read the saved dates: " + e.message, "err")));
 $("c-apply").addEventListener("click", colorByDates);
 $("c-reset").addEventListener("click", async () => { await resetColors(); dateColorsOn = false; msg("c-msg", "Colors reset."); });
 $("c-mode").addEventListener("change", () => { renderLegend(); if (dateColorsOn) colorByDates(); });
 $("c-asof").addEventListener("change", () => { renderLegend(); if (dateColorsOn) colorByDates(); });
 $("d-filter").addEventListener("input", renderDates);
+$("d-xlsx").addEventListener("click", exportXlsx);
+function statusColor() { const s = $("d-status").value; let c = ""; try { c = localStorage.getItem("plateau:tracker:color:" + s) || ""; } catch (e) { /* ignore */ } $("d-color").value = isHex(c) ? c : DEFAULT_COLOR[s]; }
+$("d-status").addEventListener("change", statusColor); statusColor();
 $("d-csv").addEventListener("click", () => download("installation_dates_" + today() + ".csv", datesCsv(), "text/csv"));
 $("d-tbl").addEventListener("click", (ev) => {
   const tr = ev.target.closest("tr.sel"); if (!tr) return;
@@ -782,11 +904,14 @@ window.addEventListener("message", async (ev) => {
   const reply = (o) => { try { ev.source.postMessage(Object.assign({ plateauResult: d.plateauCmd, from: "install" }, o), "*"); } catch (e) { log("reply", e); } };
   const c = d.plateauCmd;
   if (c === "status") reply({ text: VERSION + " models=" + models.length + " records=" + records.size + " scan=" + (scan ? scan.count : "no") });
-  else if (c === "saveDate") { if (d.date) $("d-date").value = d.date; if (d.status) $("d-status").value = d.status; await saveSelection(false); reply({ text: $("d-msg").textContent }); }
+  else if (c === "saveDate") { if (d.date) $("d-date").value = d.date; if (d.status) { $("d-status").value = d.status; statusColor(); } if (d.color) $("d-color").value = d.color; await saveSelection(false); reply({ text: $("d-msg").textContent }); }
+  else if (c === "deleteAll") { await deleteAll(); reply({ text: $("d-msg").textContent }); }
+  else if (c === "deleteClick") { await deleteClick(); reply({ text: $("d-clear").textContent + " | " + $("d-msg").textContent }); }
   else if (c === "clearDate") { await saveSelection(true); reply({ text: $("d-msg").textContent }); }
   else if (c === "load") { try { await loadRecords(true); } catch (e) { msg("d-msg", "load failed: " + e.message, "err"); } reply({ text: $("d-msg").textContent }); }
   else if (c === "colorDates") { if (d.mode) $("c-mode").value = d.mode; if (d.asof) $("c-asof").value = d.asof; await colorByDates(); reply({ text: $("c-msg").textContent + " | " + legend.map(b => b.label + "=" + b.recs.length + " " + b.color).join(", ") }); }
   else if (c === "records") reply({ text: datesCsv() });
+  else if (c === "xlsx") { const w = buildXlsx(); let b = ""; for (const v of w.bytes) b += String.fromCharCode(v); reply({ text: "XLSX installed=" + w.installed + " planned=" + w.planned + " " + btoa(b) }); }
   else if (c === "scan") { await scanModels(); reply({ text: $("p-msg").textContent }); }
   else if (c === "colorProp") { $("p-find").value = ""; fillKeys(); $("p-key").value = d.key || ""; pickKey(); await colorByProp(); reply({ text: $("p-msg").textContent + " | " + colorsCsv().replace(/\r\n/g, " / ") }); }
   else if (c === "importColors") { importColors(d.csv || ""); reply({ text: $("p-msg").textContent }); }
